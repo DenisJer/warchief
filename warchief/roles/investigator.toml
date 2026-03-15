@@ -1,0 +1,21 @@
+[identity]
+name = "investigator"
+prompt_file = "prompts/investigator.md"
+max_concurrent = 4
+description = "Scout. Researches and gathers intelligence across the battlefield."
+
+[model]
+default = "claude-sonnet-4-20250514"
+
+[permissions]
+allowed_tools = ["Read", "Glob", "Grep", "WebSearch", "Bash"]
+disallowed_bash_commands = ["rm -rf /", "sudo rm", "chmod 777", "mkfs"]
+
+[health]
+timeout_seconds = 3600
+max_crashes = 3
+max_rejections = 2
+max_total_spawns = 15
+
+[worktree]
+type = "none"

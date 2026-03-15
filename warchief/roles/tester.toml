@@ -1,0 +1,22 @@
+[identity]
+name = "tester"
+prompt_file = "prompts/tester.md"
+max_concurrent = 2
+description = "Demolisher. Writes and runs comprehensive tests on feature branches."
+
+[model]
+default = "claude-sonnet-4-20250514"
+max_turns = 25
+
+[permissions]
+allowed_tools = ["Bash", "Edit", "Write", "Read", "Glob", "Grep"]
+disallowed_bash_commands = ["rm -rf /", "sudo rm", "chmod 777", "mkfs"]
+
+[health]
+timeout_seconds = 3600
+max_crashes = 3
+max_rejections = 3
+max_total_spawns = 10
+
+[worktree]
+type = "branch"

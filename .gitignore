@@ -1,0 +1,21 @@
+# Warchief pipeline state
+.warchief
+.warchief-worktrees
+
+# Claude Code artifacts
+.claude
+
+# Debug artifacts
+debug/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+
+# OS / IDE
+.DS_Store
+.pytest_cache/

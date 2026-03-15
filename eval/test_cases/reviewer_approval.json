@@ -1,0 +1,17 @@
+{
+  "id": "reviewer_approval_01",
+  "role": "reviewer",
+  "prompt": "Review this code change: Added a new endpoint POST /api/users that accepts JSON body with email and password, creates a user record, and returns the user ID. The password is stored as bcrypt hash. Input validation checks email format and password length >= 8.",
+  "context": "FastAPI project. The team uses Pydantic for validation. Tests exist for the endpoint.",
+  "expected_actions": [
+    "approve",
+    "validation",
+    "error handling"
+  ],
+  "grading_criteria": [
+    "security",
+    "test",
+    "status"
+  ],
+  "models": []
+}

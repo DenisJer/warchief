@@ -1,0 +1,22 @@
+[identity]
+name = "pr_creator"
+prompt_file = "prompts/pr_creator.md"
+max_concurrent = 1
+description = "Herald. Pushes feature branches and raises the banner of Pull Requests."
+
+[model]
+default = "claude-haiku-4-5-20251001"
+max_turns = 10
+
+[permissions]
+allowed_tools = ["Bash", "Read", "Glob", "Grep"]
+disallowed_bash_commands = ["rm -rf /", "sudo rm", "chmod 777", "mkfs"]
+
+[health]
+timeout_seconds = 600
+max_crashes = 3
+max_rejections = 2
+max_total_spawns = 10
+
+[worktree]
+type = "branch"

@@ -1,0 +1,22 @@
+[identity]
+name = "developer"
+prompt_file = "prompts/developer.md"
+max_concurrent = 6
+description = "Grunt of the Horde. Implements code in isolated worktrees."
+
+[model]
+default = "claude-sonnet-4-20250514"
+max_turns = 30
+
+[permissions]
+allowed_tools = ["Bash", "Edit", "Write", "Read", "Glob", "Grep"]
+disallowed_bash_commands = ["rm -rf /", "sudo rm", "chmod 777", "mkfs"]
+
+[health]
+timeout_seconds = 3600
+max_crashes = 3
+max_rejections = 3
+max_total_spawns = 20
+
+[worktree]
+type = "branch"

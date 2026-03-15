@@ -1,0 +1,18 @@
+{
+  "id": "security_reviewer_01",
+  "role": "security_reviewer",
+  "prompt": "Security review: A new login endpoint accepts username and password, queries the database with a parameterized query, compares bcrypt hashes, and returns a JWT token with 1-hour expiry. The token includes user_id and role claims.",
+  "context": "Python FastAPI. JWT via python-jose. bcrypt via passlib.",
+  "expected_actions": [
+    "jwt",
+    "token",
+    "expiry",
+    "injection"
+  ],
+  "grading_criteria": [
+    "rate limit",
+    "brute force",
+    "secret"
+  ],
+  "models": []
+}

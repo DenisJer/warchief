@@ -1,0 +1,18 @@
+[metadata]
+name = "default"
+description = "Standard development pipeline: develop -> review -> create PR"
+
+[stages]
+development = { role = "developer", priority = 6 }
+reviewing = { role = "reviewer", priority = 4 }
+security-review = { role = "security_reviewer", priority = 3, requires_label = "security" }
+pr-creation = { role = "pr_creator", priority = 2 }
+
+[routing]
+security = { insert_stage = "security-review", after = "reviewing" }
+frontend = { prompt_block = "visual_verification" }
+
+[defaults]
+max_spawns_per_cycle = 2
+poll_interval_seconds = 5
+rejection_cooldown_seconds = 60

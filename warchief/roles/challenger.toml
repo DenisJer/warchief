@@ -1,0 +1,21 @@
+[identity]
+name = "challenger"
+prompt_file = "prompts/challenger.md"
+max_concurrent = 2
+description = "Dark Ranger. Challenges findings with counter-arguments from the shadows."
+
+[model]
+default = "claude-sonnet-4-20250514"
+
+[permissions]
+allowed_tools = ["Read", "Glob", "Grep", "WebSearch", "Bash"]
+disallowed_bash_commands = ["rm -rf /", "sudo rm", "chmod 777", "mkfs"]
+
+[health]
+timeout_seconds = 2400
+max_crashes = 3
+max_rejections = 2
+max_total_spawns = 10
+
+[worktree]
+type = "none"

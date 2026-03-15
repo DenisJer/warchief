@@ -1,0 +1,19 @@
+[metadata]
+name = "investigation"
+description = "Research pipeline: investigate -> consolidate -> plan -> develop"
+
+[stages]
+investigation = { role = "investigator", priority = 8 }
+challenge = { role = "challenger", priority = 6 }
+consolidation = { role = "conductor", priority = 4 }
+planning = { role = "conductor", priority = 3 }
+development = { role = "developer", priority = 2 }
+
+[routing]
+deep-dive = { insert_stage = "challenge", after = "investigation" }
+skip-dev = { remove_stage = "development" }
+
+[defaults]
+max_spawns_per_cycle = 3
+poll_interval_seconds = 10
+rejection_cooldown_seconds = 120

@@ -1,0 +1,18 @@
+{
+  "id": "integrator_merge_01",
+  "role": "integrator",
+  "prompt": "Merge the feature branch 'feature/user-auth' into main. The branch has 3 commits: add user model, add auth endpoints, add auth tests. CI is green. The reviewer approved. There are no merge conflicts.",
+  "context": "Git-based workflow. Main branch is protected. All tests pass on the feature branch.",
+  "expected_actions": [
+    "merge",
+    "branch",
+    "test",
+    "clean"
+  ],
+  "grading_criteria": [
+    "verify",
+    "conflict",
+    "status"
+  ],
+  "models": []
+}

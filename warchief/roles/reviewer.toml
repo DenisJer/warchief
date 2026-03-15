@@ -1,0 +1,22 @@
+[identity]
+name = "reviewer"
+prompt_file = "prompts/reviewer.md"
+max_concurrent = 4
+description = "Far Seer. Reviews code with the wisdom of the ancestors."
+
+[model]
+default = "claude-haiku-4-5-20251001"
+max_turns = 15
+
+[permissions]
+allowed_tools = ["Read", "Glob", "Grep", "Bash"]
+disallowed_bash_commands = ["rm", "mv", "cp", "chmod", "chown", "mkfs", "sudo"]
+
+[health]
+timeout_seconds = 1800
+max_crashes = 3
+max_rejections = 2
+max_total_spawns = 15
+
+[worktree]
+type = "detached"

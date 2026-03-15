@@ -1,0 +1,19 @@
+{
+  "id": "conductor_decomposition_01",
+  "role": "conductor",
+  "prompt": "Decompose this requirement into tasks: Build a user authentication system with login, registration, password reset, and session management.",
+  "context": "The project uses Python with FastAPI. There is an existing users table in PostgreSQL.",
+  "expected_actions": [
+    "create",
+    "login",
+    "registration",
+    "password",
+    "session"
+  ],
+  "grading_criteria": [
+    "dependency",
+    "priority",
+    "security"
+  ],
+  "models": []
+}
