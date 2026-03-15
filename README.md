@@ -43,21 +43,39 @@ No other runtime dependencies. Rich, Textual, FastAPI are optional extras.
 
 ## Installation
 
+### From PyPI (recommended)
+
 ```bash
+pip install warchief-orchestrator
+
+# With web dashboard
+pip install warchief-orchestrator[web]
+
+# With terminal dashboard (rich)
+pip install warchief-orchestrator[ui]
+
+# With everything
+pip install warchief-orchestrator[ui,web]
+
+# Or use pipx for isolated CLI install
+pipx install warchief-orchestrator
+```
+
+### From source
+
+```bash
+git clone https://github.com/DenisJer/warchief.git
+cd warchief
+python3 -m venv .venv && source .venv/bin/activate
+
 # Basic install
 pip install -e .
 
-# With live terminal dashboard (rich)
-pip install -e ".[ui]"
-
-# With web dashboard (FastAPI + WebSocket)
+# With web dashboard
 pip install -e ".[web]"
 
 # With everything
 pip install -e ".[dev,ui,web]"
-
-# Make available globally (add to shell rc)
-export PATH="$HOME/Desktop/warchief/.venv/bin:$PATH"
 ```
 
 ## Pipeline
