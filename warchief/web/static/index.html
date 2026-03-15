@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Warchief Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    min-height: 100vh;
+  }
+  a { color: #FFD100; text-decoration: none; }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+    border-bottom: 3px solid #8C1616;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .header h1 {
+    color: #FFD100;
+    font-size: 22px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .header .stats {
+    display: flex;
+    gap: 18px;
+    font-size: 13px;
+  }
+  .header .stats span { color: #aaa; }
+  .header .stats .val { color: #FFD100; font-weight: bold; }
+  .paused-badge {
+    background: #8C1616;
+    color: #FFD100;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 12px;
+    margin-left: 12px;
+  }
+
+  /* Main grid */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: auto 1fr;
+    gap: 12px;
+    padding: 12px;
+    height: calc(100vh - 60px);
+  }
+
+  /* Pipeline spans full width on top */
+  .pipeline-section {
+    grid-column: 1 / -1;
+  }
+
+  /* Cards */
+  .card {
+    background: #16213e;
+    border: 1px solid #2a2a4a;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .card-header {
+    background: #0f0f23;
+    border-bottom: 1px solid #8C1616;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: bold;
+    color: #FFD100;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .card-body {
+    padding: 10px 14px;
+    font-size: 13px;
+    overflow-y: auto;
+  }
+
+  /* Pipeline horizontal */
+  .pipeline-row {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 10px 14px;
+  }
+  .stage-col {
+    flex: 1;
+    min-width: 180px;
+    background: #0f0f23;
+    border: 1px solid #2a2a4a;
+    border-radius: 4px;
+  }
+  .stage-header {
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: bold;
+    color: #FFD100;
+    text-transform: uppercase;
+    border-bottom: 1px solid #2a2a4a;
+    display: flex;
+    justify-content: space-between;
+  }
+  .stage-header .count {
+    background: #8C1616;
+    color: #fff;
+    border-radius: 10px;
+    padding: 0 7px;
+    font-size: 11px;
+    min-width: 20px;
+    text-align: center;
+  }
+  .stage-tasks {
+    padding: 6px;
+    min-height: 50px;
+  }
+
+  /* Task card inside stage */
+  .task-card {
+    background: #16213e;
+    border: 1px solid #2a2a4a;
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin-bottom: 4px;
+    font-size: 12px;
+  }
+  .task-card:hover {
+    border-color: #FFD100;
+  }
+  .task-card .task-id {
+    color: #FFD100;
+    font-weight: bold;
+    font-size: 11px;
+  }
+  .task-card .task-title {
+    color: #ccc;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .task-card .task-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 11px;
+    color: #888;
+  }
+  .task-card .task-actions {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  /* Status badges */
+  .status { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: bold; }
+  .status-open { background: #1a5276; color: #85c1e9; }
+  .status-in_progress { background: #1e6e3e; color: #82e0aa; }
+  .status-blocked { background: #8C1616; color: #f1948a; }
+  .status-closed { background: #333; color: #888; }
+
+  /* Buttons */
+  .btn {
+    background: #2a2a4a;
+    border: 1px solid #444;
+    color: #ccc;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: #FFD100; color: #FFD100; }
+  .btn-danger { border-color: #8C1616; }
+  .btn-danger:hover { background: #8C1616; color: #fff; }
+
+  /* Sidebar layout */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+  }
+
+  /* Agent row */
+  .agent-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid #1a1a2e;
+    font-size: 12px;
+  }
+  .agent-row .agent-id { color: #FFD100; font-weight: bold; }
+  .agent-row .agent-role { color: #85c1e9; }
+  .agent-row .agent-task { color: #aaa; }
+  .agent-row .agent-age { color: #666; }
+
+  /* Token display */
+  .token-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .token-item {
+    background: #0f0f23;
+    border-radius: 4px;
+    padding: 8px;
+    text-align: center;
+  }
+  .token-label { font-size: 10px; color: #888; text-transform: uppercase; }
+  .token-value { font-size: 16px; font-weight: bold; color: #FFD100; margin-top: 2px; }
+  .token-cost {
+    text-align: center;
+    padding: 6px;
+    font-size: 14px;
+    color: #82e0aa;
+    font-weight: bold;
+  }
+
+  /* Question panel */
+  .question-item {
+    background: #0f0f23;
+    border-left: 3px solid #8C1616;
+    padding: 8px;
+    margin-bottom: 6px;
+    border-radius: 0 4px 4px 0;
+  }
+  .question-item .q-task { color: #FFD100; font-size: 11px; font-weight: bold; }
+  .question-item .q-text { color: #e0e0e0; margin: 4px 0; font-size: 12px; }
+  .answer-row {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .answer-input {
+    flex: 1;
+    background: #1a1a2e;
+    border: 1px solid #2a2a4a;
+    color: #e0e0e0;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  .answer-input:focus { outline: none; border-color: #FFD100; }
+
+  /* Event feed */
+  .event-row {
+    display: flex;
+    gap: 8px;
+    padding: 3px 0;
+    border-bottom: 1px solid #1a1a2e;
+    font-size: 12px;
+  }
+  .event-age { color: #666; min-width: 35px; text-align: right; }
+  .event-type { font-weight: bold; min-width: 80px; }
+  .event-type-spawn { color: #82e0aa; }
+  .event-type-advance { color: #85c1e9; }
+  .event-type-crash { color: #f1948a; }
+  .event-type-block { color: #f1948a; }
+  .event-type-reject { color: #f0b27a; }
+  .event-type-answer { color: #FFD100; }
+  .event-task { color: #aaa; }
+
+  /* Empty state */
+  .empty { color: #555; font-style: italic; padding: 12px; text-align: center; }
+
+  /* Connection indicator */
+  .conn-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    display: inline-block; margin-right: 6px;
+  }
+  .conn-dot.connected { background: #82e0aa; }
+  .conn-dot.disconnected { background: #f1948a; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .main {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto;
+    }
+    .pipeline-section { grid-column: 1; }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #0f0f23; }
+  ::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #444; }
+
+  /* Prompt dialog */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: #16213e;
+    border: 2px solid #8C1616;
+    border-radius: 8px;
+    padding: 20px;
+    min-width: 400px;
+  }
+  .modal h3 { color: #FFD100; margin-bottom: 12px; }
+  .modal input {
+    width: 100%;
+    background: #1a1a2e;
+    border: 1px solid #2a2a4a;
+    color: #e0e0e0;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+  .modal input:focus { outline: none; border-color: #FFD100; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal .btn { padding: 6px 16px; font-size: 13px; }
+  .btn-primary { background: #8C1616; border-color: #8C1616; color: #FFD100; }
+  .btn-primary:hover { background: #a51d1d; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex;align-items:center">
+    <h1>Warchief</h1>
+    <span id="pausedBadge" class="paused-badge" style="display:none">PAUSED</span>
+  </div>
+  <div class="stats">
+    <span><span class="conn-dot" id="connDot"></span><span id="connText">Connecting...</span></span>
+    <span>Tasks: <span class="val" id="statTotal">0</span></span>
+    <span>Active: <span class="val" id="statActive">0</span></span>
+    <span>Blocked: <span class="val" id="statBlocked">0</span></span>
+    <span>Done: <span class="val" id="statDone">0</span></span>
+    <span>Agents: <span class="val" id="statAgents">0</span></span>
+  </div>
+</div>
+
+<div class="main">
+  <!-- Pipeline -->
+  <div class="pipeline-section card">
+    <div class="card-header">Pipeline</div>
+    <div class="pipeline-row" id="pipelineRow"></div>
+  </div>
+
+  <!-- Left panel: events -->
+  <div class="card" style="overflow:hidden;display:flex;flex-direction:column">
+    <div class="card-header">Events (last 10 min)</div>
+    <div class="card-body" id="eventsBody" style="flex:1;overflow-y:auto"></div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="card">
+      <div class="card-header">Agents</div>
+      <div class="card-body" id="agentsBody"></div>
+    </div>
+    <div class="card">
+      <div class="card-header">Tokens</div>
+      <div class="card-body" id="tokensBody"></div>
+    </div>
+    <div class="card" id="questionsCard" style="display:none">
+      <div class="card-header">Questions</div>
+      <div class="card-body" id="questionsBody"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal for nudge/tell/grant -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3 id="modalTitle">Action</h3>
+    <input type="text" id="modalInput" placeholder="Enter message..." />
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="modalSubmit" onclick="submitModal()">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let ws = null;
+  let state = null;
+  let modalAction = null;
+  let modalTaskId = null;
+  let actionInProgress = false;
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/ws');
+
+    ws.onopen = function() {
+      document.getElementById('connDot').className = 'conn-dot connected';
+      document.getElementById('connText').textContent = 'Live';
+    };
+
+    ws.onmessage = function(evt) {
+      try {
+        state = JSON.parse(evt.data);
+        // Don't re-render while user is interacting with confirm/modal
+        if (!actionInProgress && !modalAction) render(state);
+      } catch(e) { console.error('Parse error', e); }
+    };
+
+    ws.onclose = function() {
+      document.getElementById('connDot').className = 'conn-dot disconnected';
+      document.getElementById('connText').textContent = 'Disconnected';
+      setTimeout(connect, 3000);
+    };
+
+    ws.onerror = function() {
+      ws.close();
+    };
+  }
+
+  function fmt(n) {
+    return n.toLocaleString();
+  }
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function render(s) {
+    // Header stats
+    document.getElementById('statTotal').textContent = s.metrics.total;
+    document.getElementById('statActive').textContent = s.metrics.in_progress;
+    document.getElementById('statBlocked').textContent = s.metrics.blocked;
+    document.getElementById('statDone').textContent = s.metrics.closed;
+    document.getElementById('statAgents').textContent = s.metrics.agents_running;
+    document.getElementById('pausedBadge').style.display = s.paused ? '' : 'none';
+
+    // Pipeline
+    const row = document.getElementById('pipelineRow');
+    row.innerHTML = s.pipeline.map(function(stage) {
+      const tasksHtml = stage.tasks.length ? stage.tasks.map(function(t) {
+        const statusCls = 'status status-' + t.status;
+        const agentStr = t.agent_id ? '<span style="color:#85c1e9;font-size:10px">' + esc(t.agent_id) + '</span>' : '';
+        return '<div class="task-card">' +
+          '<div class="task-id">' + esc(t.id) + '</div>' +
+          '<div class="task-title">' + esc(t.title) + '</div>' +
+          '<div class="task-meta"><span class="' + statusCls + '">' + esc(t.status) + '</span><span>' + esc(t.age) + '</span></div>' +
+          (agentStr ? '<div style="margin-top:2px">' + agentStr + '</div>' : '') +
+          '<div class="task-actions">' +
+            '<button class="btn btn-danger" onclick="doAction(\'drop\',\'' + esc(t.id) + '\')">drop</button>' +
+            '<button class="btn" onclick="openModal(\'grant\',\'' + esc(t.id) + '\')">grant</button>' +
+            '<button class="btn" onclick="openModal(\'nudge\',\'' + esc(t.id) + '\')">nudge</button>' +
+            '<button class="btn" onclick="openModal(\'tell\',\'' + esc(t.id) + '\')">tell</button>' +
+          '</div>' +
+        '</div>';
+      }).join('') : '<div class="empty">empty</div>';
+
+      return '<div class="stage-col">' +
+        '<div class="stage-header"><span>' + esc(stage.stage) + '</span><span class="count">' + stage.count + '</span></div>' +
+        '<div class="stage-tasks">' + tasksHtml + '</div>' +
+      '</div>';
+    }).join('');
+
+    // Agents
+    const ab = document.getElementById('agentsBody');
+    if (s.agents.length) {
+      ab.innerHTML = s.agents.map(function(a) {
+        return '<div class="agent-row">' +
+          '<span class="agent-id">' + esc(a.id) + '</span>' +
+          '<span class="agent-role">' + esc(a.role) + '</span>' +
+          '<span class="agent-task">' + esc(a.task || '-') + '</span>' +
+          '<span class="agent-age">' + esc(a.age) + '</span>' +
+        '</div>';
+      }).join('');
+    } else {
+      ab.innerHTML = '<div class="empty">No active agents</div>';
+    }
+
+    // Tokens
+    const tb = document.getElementById('tokensBody');
+    let modelRows = '';
+    if (s.tokens.by_model) {
+      modelRows = Object.entries(s.tokens.by_model).sort(function(a,b){return b[1]-a[1]}).map(function(e) {
+        const shortName = e[0].split('-')[1] || e[0];
+        return '<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:11px">' +
+          '<span style="color:#85c1e9">' + esc(shortName) + '</span>' +
+          '<span style="color:#FFD100">$' + e[1].toFixed(4) + '</span></div>';
+      }).join('');
+    }
+    let roleRows = '';
+    if (s.tokens.by_role) {
+      roleRows = Object.entries(s.tokens.by_role).sort(function(a,b){return b[1]-a[1]}).map(function(e) {
+        return '<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:11px">' +
+          '<span style="color:#82e0aa">' + esc(e[0]) + '</span>' +
+          '<span style="color:#FFD100">$' + e[1].toFixed(4) + '</span></div>';
+      }).join('');
+    }
+    tb.innerHTML = '<div class="token-grid">' +
+      '<div class="token-item"><div class="token-label">Input</div><div class="token-value">' + fmt(s.tokens.input) + '</div></div>' +
+      '<div class="token-item"><div class="token-label">Cache Read</div><div class="token-value">' + fmt(s.tokens.cache_read) + '</div></div>' +
+      '<div class="token-item"><div class="token-label">Cache Write</div><div class="token-value">' + fmt(s.tokens.cache_write) + '</div></div>' +
+      '<div class="token-item"><div class="token-label">Output</div><div class="token-value">' + fmt(s.tokens.output) + '</div></div>' +
+    '</div>' +
+    '<div class="token-cost">Session: $' + s.tokens.session_cost_usd.toFixed(2) + '  &nbsp;|&nbsp;  All-time: $' + s.tokens.cost_usd.toFixed(2) + '</div>' +
+    (modelRows ? '<div style="padding:4px 0;border-top:1px solid #2a2a4a;margin-top:6px"><div style="font-size:10px;color:#888;text-transform:uppercase;margin-bottom:4px">By Model</div>' + modelRows + '</div>' : '') +
+    (roleRows ? '<div style="padding:4px 0;border-top:1px solid #2a2a4a;margin-top:4px"><div style="font-size:10px;color:#888;text-transform:uppercase;margin-bottom:4px">By Role</div>' + roleRows + '</div>' : '');
+
+    // Questions
+    const qc = document.getElementById('questionsCard');
+    const qb = document.getElementById('questionsBody');
+    if (s.questions.length) {
+      qc.style.display = '';
+      qb.innerHTML = s.questions.map(function(q) {
+        return '<div class="question-item">' +
+          '<div class="q-task">' + esc(q.task_id) + ' - ' + esc(q.title) + '</div>' +
+          '<div class="q-text">' + esc(q.question) + '</div>' +
+          '<div class="answer-row">' +
+            '<input class="answer-input" id="ans-' + esc(q.task_id) + '" placeholder="Type answer..." ' +
+              'onkeydown="if(event.key===\'Enter\')doAnswer(\'' + esc(q.task_id) + '\')" />' +
+            '<button class="btn btn-primary" onclick="doAnswer(\'' + esc(q.task_id) + '\')">Answer</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    } else {
+      qc.style.display = 'none';
+    }
+
+    // Events
+    const eb = document.getElementById('eventsBody');
+    if (s.events.length) {
+      eb.innerHTML = s.events.map(function(e) {
+        const typeCls = 'event-type event-type-' + e.type;
+        return '<div class="event-row">' +
+          '<span class="event-age">' + esc(e.age) + '</span>' +
+          '<span class="' + typeCls + '">' + esc(e.type) + '</span>' +
+          '<span class="event-task">' + esc(e.task_id) + '</span>' +
+        '</div>';
+      }).join('');
+    } else {
+      eb.innerHTML = '<div class="empty">No recent events</div>';
+    }
+  }
+
+  // Actions
+  async function apiPost(url, body) {
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body || {}),
+      });
+      return await resp.json();
+    } catch(e) {
+      console.error('API error', e);
+      return {error: e.message};
+    }
+  }
+
+  async function doAction(action, taskId) {
+    if (action === 'drop') {
+      actionInProgress = true;
+      try {
+        if (!window.confirm('Drop task ' + taskId + '?\nThis will kill the agent and close the task.')) return;
+        const r = await apiPost('/api/drop/' + encodeURIComponent(taskId));
+        if (r.error) window.alert('Error: ' + r.error);
+      } finally {
+        actionInProgress = false;
+        if (state) render(state);
+      }
+    }
+  }
+
+  async function doAnswer(taskId) {
+    const input = document.getElementById('ans-' + taskId);
+    if (!input || !input.value.trim()) return;
+    const r = await apiPost('/api/answer/' + taskId, {message: input.value.trim()});
+    if (r.error) alert(r.error);
+    else input.value = '';
+  }
+
+  function openModal(action, taskId) {
+    modalAction = action;
+    modalTaskId = taskId;
+    document.getElementById('modalTitle').textContent = action.charAt(0).toUpperCase() + action.slice(1) + ' ' + taskId;
+    document.getElementById('modalInput').value = '';
+    document.getElementById('modalInput').placeholder = action === 'grant' ? 'e.g. figma console, supabase' : 'Enter message...';
+    document.getElementById('modalOverlay').classList.add('active');
+    setTimeout(function() { document.getElementById('modalInput').focus(); }, 100);
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('active');
+    modalAction = null;
+    modalTaskId = null;
+  }
+
+  async function submitModal() {
+    const msg = document.getElementById('modalInput').value.trim();
+    if (!msg) return;
+    const r = await apiPost('/api/' + modalAction + '/' + modalTaskId, {message: msg});
+    if (r.error) alert(r.error);
+    closeModal();
+  }
+
+  // Enter key in modal
+  document.getElementById('modalInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') submitModal();
+    if (e.key === 'Escape') closeModal();
+  });
+
+  // Escape key to close modal
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  // Start
+  connect();
+</script>
+</body>
+</html>

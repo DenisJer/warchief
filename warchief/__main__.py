@@ -1160,6 +1160,18 @@ def cmd_connect(args: argparse.Namespace) -> None:
 
 def cmd_dashboard(args: argparse.Namespace) -> None:
     _ensure_initialized()
+    if getattr(args, "web", False):
+        try:
+            from warchief.web.app import run_server
+        except ImportError:
+            print(
+                "Error: FastAPI and uvicorn are required for the web dashboard.\n"
+                "Install them with: pip install warchief-orchestrator[web]",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        run_server(Path.cwd(), port=args.port)
+        return
     from warchief.dashboard import render_dashboard_snapshot, run_dashboard
     if args.snapshot:
         print(render_dashboard_snapshot(Path.cwd()))
@@ -1540,6 +1552,10 @@ def build_parser() -> argparse.ArgumentParser:
                               help="Refresh interval in seconds (default: 2)")
     p_dashboard.add_argument("--snapshot", action="store_true",
                               help="Print single snapshot instead of live view")
+    p_dashboard.add_argument("--web", action="store_true",
+                              help="Launch web dashboard (requires fastapi+uvicorn)")
+    p_dashboard.add_argument("--port", type=int, default=8095,
+                              help="Port for web dashboard (default: 8095)")
 
     sub.add_parser("costs", help="Show cost breakdown")
     sub.add_parser("observe", help="Export observability metrics")

@@ -14,6 +14,7 @@ dependencies = []
 [project.optional-dependencies]
 ui = ["rich>=13.0", "watchdog>=3.0", "textual>=0.50"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.4", "mypy>=1.10"]
+web = ["fastapi>=0.104", "uvicorn[standard]>=0.24", "websockets>=12.0"]
 
 [project.scripts]
 warchief = "warchief.__main__:main"
@@ -23,7 +24,7 @@ wc = "warchief.__main__:main"
 where = ["."]
 
 [tool.setuptools.package-data]
-warchief = ["roles/*.toml"]
+warchief = ["roles/*.toml", "tui/*.css", "web/static/*"]
 
 [tool.ruff]
 target-version = "py311"
