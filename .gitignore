@@ -19,3 +19,4 @@ build/
 # OS / IDE
 .DS_Store
 .pytest_cache/
+.github/
