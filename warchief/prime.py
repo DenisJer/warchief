@@ -67,41 +67,11 @@ def build_prime_context(
             body = msg.body if len(msg.body) <= _MAX_MSG_CHARS else ("...\n" + msg.body[-_MAX_MSG_CHARS:])
             sections.append(body)
 
-    # Check previous agent logs for this task (last 2 only to limit context)
-    agent_logs_dir = project_root / ".warchief" / "agent-logs"
-    if agent_logs_dir.exists():
-        # Find logs from previous agents on this task
-        task_logs: list[Path] = []
-        for log_file in sorted(agent_logs_dir.glob("*.log")):
-            try:
-                prompt_file = agent_logs_dir / f"{log_file.stem}.prompt"
-                if prompt_file.exists():
-                    prompt_text = prompt_file.read_text()
-                    if task.id in prompt_text:
-                        task_logs.append(log_file)
-            except (OSError, UnicodeDecodeError):
-                continue
-
-        # Only include the last 2 agent logs, truncated to limit context bloat
-        _MAX_LOG_CHARS = 500
-        for log_file in task_logs[-2:]:
-            try:
-                content = log_file.read_text()
-                lines = content.strip().split("\n")
-                # Filter out tool call noise (file reads, glob results, etc.)
-                filtered = [
-                    l for l in lines
-                    if not l.startswith("Reading: ") and not l.startswith("Glob: ")
-                    and not l.startswith("Grep: ") and not l.startswith("  /")
-                ]
-                tail = filtered[-10:] if len(filtered) > 10 else filtered
-                snippet = "\n".join(tail)
-                if len(snippet) > _MAX_LOG_CHARS:
-                    snippet = "...\n" + snippet[-_MAX_LOG_CHARS:]
-                sections.append(f"## Previous Agent Log ({log_file.stem})\n"
-                               f"Last output:\n```\n{snippet}\n```")
-            except (OSError, UnicodeDecodeError):
-                continue
+    # Task scratchpad — structured handoff notes from previous agents
+    from warchief.scratchpad import read_scratchpad_for_role
+    scratchpad = read_scratchpad_for_role(project_root, task.id, role)
+    if scratchpad:
+        sections.append(f"## Scratchpad (handoff notes from previous agents)\n{scratchpad}")
 
     # User messages (Q&A and feedback from retries) — reuse already-fetched messages
     qa_messages = [m for m in all_messages if m.message_type in ("question", "answer", "feedback")]

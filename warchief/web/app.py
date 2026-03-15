@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from warchief.config import STAGES, read_config
 from warchief.cost_tracker import compute_cost_summary
 from warchief.mcp_discovery import get_mcp_servers, is_tool_grant, resolve_tool_grant
+from warchief.scratchpad import read_scratchpad
 from warchief.metrics import compute_pipeline_metrics, format_duration
 from warchief.models import EventRecord, MessageRecord
 from warchief.task_store import TaskStore
@@ -65,6 +66,7 @@ def _build_state() -> dict:
             for t in stage_tasks:
                 agent = agent_map.get(t.id)
                 age = format_duration(now - t.updated_at) if t.updated_at else ""
+                scratchpad = read_scratchpad(_project_root, t.id)
                 cards.append({
                     "id": t.id,
                     "title": t.title,
@@ -72,6 +74,7 @@ def _build_state() -> dict:
                     "agent_id": agent.id if agent else None,
                     "age": age,
                     "labels": t.labels,
+                    "scratchpad": scratchpad[:500] if scratchpad else "",
                 })
             pipeline.append({"stage": stage, "tasks": cards, "count": len(cards)})
 

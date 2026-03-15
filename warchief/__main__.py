@@ -923,6 +923,10 @@ def cmd_drop(args: argparse.Namespace) -> None:
     store._conn.commit()
     store.close()
 
+    # Clean up scratchpad
+    from warchief.scratchpad import clear_scratchpad
+    clear_scratchpad(project_root, task.id)
+
     print(f"Dropped task {task.id} \"{task.title}\" ({cleaned} log files cleaned)")
 
 
@@ -1295,6 +1299,13 @@ def cmd_agent_update(args: argparse.Namespace) -> None:
             ))
             print(f"Question recorded for {task_id}: {args.question}")
 
+        if getattr(args, "handoff", None):
+            from warchief.scratchpad import append_scratchpad
+            agent_id = os.environ.get("WARCHIEF_AGENT", "unknown")
+            role = os.environ.get("WARCHIEF_ROLE", "unknown")
+            append_scratchpad(project_root, task_id, role, agent_id, args.handoff)
+            print(f"Handoff notes saved for {task_id}")
+
         if updates:
             store.update_task(task_id, **updates)
             print(f"Updated {task_id}: {updates}")
@@ -1567,6 +1578,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_agent_update.add_argument("--comment", help="Add a comment")
     p_agent_update.add_argument("--add-label", help="Add a label (only 'rejected' allowed)")
     p_agent_update.add_argument("--question", help="Ask the user a question (sets status to blocked)")
+    p_agent_update.add_argument("--handoff", help="Write handoff notes for the next agent (what you did, decisions, issues)")
 
     # answer
     p_answer = sub.add_parser("answer", help="Answer a pending agent question")

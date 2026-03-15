@@ -67,16 +67,16 @@ class TestBuildPrimeContext:
         ctx = build_prime_context(task, "developer", store, tmp_path)
         assert "Missing error handling" in ctx
 
-    def test_includes_previous_agent_logs(self, store: TaskStore, tmp_path: Path):
+    def test_includes_scratchpad(self, store: TaskStore, tmp_path: Path):
         task = TaskRecord(id="wc-t01", title="Build login", spawn_count=1)
         store.create_task(task)
 
-        # Create fake agent log and prompt
-        logs_dir = tmp_path / ".warchief" / "agent-logs"
-        logs_dir.mkdir(parents=True)
-        (logs_dir / "dev-thrall.log").write_text("Implemented login form\nAll tests pass")
-        (logs_dir / "dev-thrall.prompt").write_text("Task wc-t01: Build login")
+        # Create scratchpad with handoff notes
+        from warchief.scratchpad import append_scratchpad
+        append_scratchpad(tmp_path, "wc-t01", "developer", "dev-thrall",
+                         "Implemented login form. All tests pass.")
 
-        ctx = build_prime_context(task, "developer", store, tmp_path)
-        assert "dev-thrall" in ctx
+        ctx = build_prime_context(task, "reviewer", store, tmp_path)
+        assert "Scratchpad" in ctx
+        assert "Implemented login form" in ctx
         assert "All tests pass" in ctx

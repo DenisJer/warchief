@@ -126,7 +126,7 @@ def build_claude_command(
              role_name, prompt_path, prompt_path.exists() if prompt_path else "N/A")
     if role_name == "developer":
         task_prompt += (
-            "\n## CRITICAL: Before you exit, you MUST do these two things:\n"
+            "\n## CRITICAL: Before you exit, you MUST do these three things:\n"
             "### Step 1: Commit your work\n"
             "IMPORTANT: Only `git add` the specific files YOU created or modified.\n"
             "NEVER use `git add -A` or `git add .` — this will commit junk files.\n"
@@ -134,17 +134,30 @@ def build_claude_command(
             "git add <file1> <file2> ...  # Only YOUR files\n"
             "git commit -m 'feat: <descriptive message>'\n"
             "```\n"
-            "### Step 2: Signal completion\n"
+            "### Step 2: Write handoff notes\n"
+            "Summarize what you did and WHY — the next agent (reviewer) reads this:\n"
+            "```bash\n"
+            f"warchief agent-update --task-id {task.id} --handoff 'What: <files changed>. "
+            "Why: <key decisions and trade-offs>. Issues: <known limitations or concerns>'\n"
+            "```\n"
+            "### Step 3: Signal completion\n"
             "```bash\n"
             f"warchief agent-update --task-id {task.id} --status open\n"
             "```\n"
-            "If you skip EITHER step, the pipeline CANNOT advance.\n"
+            "If you skip ANY step, the pipeline CANNOT advance.\n"
             "If you are stuck or the task is impossible, run:\n"
             f"  warchief agent-update --task-id {task.id} --status blocked --comment '<reason>'\n"
         )
     elif role_name == "reviewer":
         task_prompt += (
-            "\n## CRITICAL: Before you exit, signal your decision:\n"
+            "\n## CRITICAL: Before you exit, you MUST do these two things:\n"
+            "### Step 1: Write handoff notes\n"
+            "Summarize your review findings for the next agent:\n"
+            "```bash\n"
+            f"warchief agent-update --task-id {task.id} --handoff 'Reviewed: <what you checked>. "
+            "Verdict: <approved/rejected>. Feedback: <specific issues or praise>'\n"
+            "```\n"
+            "### Step 2: Signal your decision\n"
             "If APPROVED:\n"
             f"  warchief agent-update --task-id {task.id} --status open\n"
             "If REJECTED (changes needed):\n"
@@ -153,7 +166,13 @@ def build_claude_command(
         )
     elif role_name in ("security_reviewer", "tester"):
         task_prompt += (
-            "\n## CRITICAL: Before you exit, signal your decision:\n"
+            "\n## CRITICAL: Before you exit, you MUST do these two things:\n"
+            "### Step 1: Write handoff notes\n"
+            "```bash\n"
+            f"warchief agent-update --task-id {task.id} --handoff 'Checked: <what you tested/reviewed>. "
+            "Result: <passed/failed>. Details: <findings or concerns>'\n"
+            "```\n"
+            "### Step 2: Signal your decision\n"
             "If PASSED:\n"
             f"  warchief agent-update --task-id {task.id} --status open\n"
             "If FAILED:\n"
