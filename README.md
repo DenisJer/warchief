@@ -1,248 +1,462 @@
 # Warchief — AI Agent Orchestration Framework
 
-Command your coding agents like a true Warchief. A WoW-themed multi-agent orchestration framework that coordinates Claude Code instances for parallel software development.
+Command your coding agents like a true Warchief. A WoW-themed multi-agent orchestration system that coordinates parallel Claude Code instances through an automated development pipeline with human oversight.
+
+```
+  development → reviewing → [security-review] → testing → pr-creation
+```
+
+No merging to main. Pipeline always creates PRs via `gh pr create`.
 
 ## Quick Start
 
 ```bash
+# Install
+cd ~/Desktop/warchief
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e .
+
 # Go to your project
 cd ~/Desktop/your-project
 
-# Initialize warchief
+# Initialize
 warchief init
 
-# Create tasks
-warchief create "Build user authentication" --priority 8 --labels security
+# Launch — creates tasks from requirement, spawns agents, opens tmux UI
+warchief start "implement password reset with email verification"
+
+# Or create tasks manually
+warchief create "Build auth middleware" --priority 8 --labels security
 warchief create "Add dark mode toggle" --priority 5
-warchief create "Fix login bug" --type bug --priority 9
-
-# View your tasks
-warchief list
-warchief board
-
-# Run the full autonomous pipeline
-warchief start "implement password reset flow"
+warchief start  # starts pipeline for existing tasks
 ```
 
 ## Requirements
 
 - **Python 3.11+**
-- **Git** (your project must be a git repo)
-- **Claude Code CLI** (`claude` on PATH) — required for autonomous agent spawning
-- No other runtime dependencies
+- **Git** — project must be a git repo with at least one commit
+- **Claude Code CLI** — `claude` on PATH (required for agent spawning)
+- **GitHub CLI** — `gh` on PATH (required for PR creation stage)
+- **tmux** — optional, for the 4-pane terminal UI
+
+No other runtime dependencies. Rich, Textual, FastAPI are optional extras.
 
 ## Installation
 
 ```bash
-# Clone/download warchief
-cd ~/Desktop/warchief
-
-# Create venv and install
-python3 -m venv .venv
-source .venv/bin/activate
+# Basic install
 pip install -e .
 
-# Make it available globally (add to ~/.zshrc or ~/.bashrc)
+# With live terminal dashboard (rich)
+pip install -e ".[ui]"
+
+# With web dashboard (FastAPI + WebSocket)
+pip install -e ".[web]"
+
+# With everything
+pip install -e ".[dev,ui,web]"
+
+# Make available globally (add to shell rc)
 export PATH="$HOME/Desktop/warchief/.venv/bin:$PATH"
-
-# Or create a wrapper in ~/.local/bin (already on most PATHs)
-cat > ~/.local/bin/warchief << 'EOF'
-#!/bin/bash
-exec ~/Desktop/warchief/.venv/bin/python -m warchief "$@"
-EOF
-chmod +x ~/.local/bin/warchief
 ```
 
-## Commands
+## Pipeline
 
-### Task Management
+### Stages
 
-| Command | Description |
-|---------|-------------|
-| `warchief init` | Initialize warchief in current project |
-| `warchief create "title"` | Create a new task |
-| `warchief list` | List all tasks |
-| `warchief show <id>` | Show task details |
-| `warchief show <id> --json` | Show task as JSON |
-| `warchief update <id> --status blocked` | Update task status |
-| `warchief update <id> --add-label security` | Add a label |
-| `warchief release <id> --stage development` | Release task into pipeline |
+| Stage | Role | What Happens |
+|-------|------|-------------|
+| **development** | Developer (Sonnet) | Writes code in an isolated git worktree, commits to feature branch |
+| **reviewing** | Reviewer (Sonnet) | Reviews code in detached worktree, approves or rejects with feedback |
+| **security-review** | Security Reviewer (Opus) | Security audit — only runs for tasks labeled `security` |
+| **testing** | Configured per-project | Runs unit tests + optional E2E tests (Playwright) |
+| **pr-creation** | PR Creator (Sonnet) | Pushes branch, creates PR via `gh pr create` |
 
-### Pipeline Control
+### Testing Stage Configuration
 
-| Command | Description |
-|---------|-------------|
-| `warchief start "requirement"` | Create task + start pipeline |
-| `warchief start` | Start pipeline for existing tasks |
-| `warchief watch` | Run watcher in foreground |
-| `warchief stop` | Stop the watcher |
-| `warchief pause` | Pause pipeline (no new spawns) |
-| `warchief resume` | Resume pipeline |
-| `warchief status` | Show pipeline status |
-| `warchief kill-agent <name>` | Kill a running agent |
+Testing behavior is configured per-project in `.warchief/config.toml`:
 
-### Monitoring
-
-| Command | Description |
-|---------|-------------|
-| `warchief board` | Kanban board view |
-| `warchief dashboard` | Live-updating terminal dashboard |
-| `warchief dashboard --snapshot` | Single dashboard snapshot |
-| `warchief feed` | Activity event feed |
-| `warchief metrics` | Pipeline metrics |
-| `warchief logs <agent>` | Agent-specific log entries |
-| `warchief observe` | Export Prometheus metrics |
-| `warchief costs` | Cost breakdown by role/task/model |
-
-### Operations
-
-| Command | Description |
-|---------|-------------|
-| `warchief doctor` | Health check (10 checks) |
-| `warchief backup` | Backup state to compressed JSONL |
-| `warchief restore` | Restore from backup |
-| `warchief daemon start` | Start background daemon |
-| `warchief daemon stop` | Stop daemon |
-| `warchief daemon status` | Check daemon status |
-| `warchief sessions` | List all warchief sessions |
-| `warchief connect` | Connect to active session |
-| `warchief config` | View/edit configuration |
-| `warchief version` | Print version |
-
-## How It Works
-
-### Pipeline Stages
-
-Tasks flow through a 5-stage pipeline automatically:
-
-```
-development → reviewing → [security-review] → merging → acceptance
+```toml
+[testing]
+test_command = "npm test"              # Unit/integration tests (always runs)
+e2e_command = "npx playwright test"    # E2E tests (runs only if frontend files changed)
+test_timeout = 300
+auto_run = true                        # false = manual approve/reject
 ```
 
-1. **Development** — A developer agent writes code in a git worktree
-2. **Reviewing** — A reviewer agent checks the code and approves/rejects
-3. **Security Review** — (only for `security`-labeled tasks) Security audit
-4. **Merging** — An integrator agent merges the feature branch
-5. **Acceptance** — A tester agent validates the final result
+- **Tests configured + auto_run** — watcher runs tests automatically; failure sends task back to development
+- **Tests configured + !auto_run** — blocks with "needs-testing" label; user must `approve` or `reject`
+- **No tests configured** — testing stage is skipped entirely
+- Frontend file detection: `.html`, `.css`, `.scss`, `.js`, `.jsx`, `.ts`, `.tsx`, `.vue`, `.svelte`
 
 ### Agent Roles
 
-Each stage has a dedicated agent role with specific permissions:
+Each role is defined in `warchief/roles/*.toml` (permissions, model, limits) and `prompts/*.md` (system prompt):
 
-| Role | Model | Max Concurrent | Purpose |
-|------|-------|----------------|---------|
-| Conductor | Opus | 1 | Decomposes requirements into tasks |
-| Developer | Sonnet | 6 | Writes code |
-| Reviewer | Sonnet | 4 | Reviews code, approves/rejects |
-| Security Reviewer | Opus | 2 | Security audit |
-| Integrator | Haiku | 1 | Merges branches (serialized) |
-| Tester | Sonnet | 1 | Runs acceptance tests |
-| Investigator | Sonnet | 4 | Research tasks |
-| Challenger | Sonnet | 2 | Devil's advocate |
+| Role | Default Model | Max Concurrent | Worktree | Purpose |
+|------|--------------|----------------|----------|---------|
+| Conductor | Opus | 1 | none | Decomposes requirements into tasks |
+| Developer | Sonnet | 6 | branch | Writes code on feature branches |
+| Reviewer | Sonnet | 4 | detached | Reviews code, approves/rejects |
+| Security Reviewer | Opus | 2 | detached | Security-focused audit |
+| Tester | Sonnet | 1 | detached | Runs acceptance tests |
+| PR Creator | Sonnet | 2 | branch | Pushes branch + creates PR via gh |
+| Investigator | Sonnet | 4 | none | Research tasks |
+| Challenger | Sonnet | 2 | none | Devil's advocate review |
+
+Models can be overridden per-project:
+```toml
+[role_models]
+developer = "claude-opus-4-20250514"
+reviewer = "claude-sonnet-4-20250514"
+```
+
+### Worktree Isolation
+
+Each agent works in its own git worktree — no conflicts between parallel agents:
+
+- **Branch worktree** — Developer/PR Creator: creates `feature/{task-id}` branch
+- **Detached worktree** — Reviewer/Tester: read-only checkout at the feature branch HEAD
+- Worktrees are auto-created at spawn and cleaned up when agents finish
+- Located in `.warchief-worktrees/` (gitignored)
 
 ### State Machine
 
-The pipeline is driven by a pure-function state machine with no side effects. The `TransitionResult` pattern separates "what should change" from "how to change it":
+The pipeline is driven by a pure-function state machine with no side effects:
 
 ```
-dispatch_transition(current_state) → TransitionResult {
+dispatch_transition(task_state) → TransitionResult {
     status, next_stage, add_labels, remove_labels, failure_reason
 }
 ```
 
+Transitions are fully testable — the watcher applies the result to the database.
+
 ### Rejection & Crash Handling
 
-- **Rejection**: Reviewer rejects → task returns to development (max 3 rejections before blocked)
-- **Crash**: Agent process dies → task reset to open for retry (max 3 crashes before blocked)
-- **Blocked tasks**: Require conductor intervention
+- **Rejection**: Reviewer rejects → task returns to development with feedback (max 3 before blocked)
+- **Crash**: Agent process dies → task reset to open for retry (max 3 before blocked)
+- **Blocked tasks**: Require user intervention via `retry`, `nudge`, or `drop`
 
 ### Self-Healing
 
-- **Watcher** — Polls every 5s, detects dead agents, resets orphaned tasks
-- **Daemon** — Monitors watcher health, auto-restarts on crash
-- **Mass death detection** — If 3+ agents die within 30s, pipeline auto-pauses
-- **Recovery** — Zombie detection, orphan recovery, worktree cleanup
+- **Zombie detection** — agents with no heartbeat for 60s are killed and tasks reset
+- **Orphan recovery** — tasks stuck in `in_progress` with no live agent are reset
+- **Mass death detection** — 3+ agents dying within 30s triggers auto-pause
+- **Stale assignment cleanup** — open tasks with dead assigned agents are freed
+
+## Human-in-the-Loop
+
+Agents can ask questions and receive user feedback without breaking the pipeline:
+
+### Questions
+
+When an agent is unsure, it asks a question and exits. The user answers, and the agent is re-spawned with the answer in its context.
+
+```bash
+# See pending questions
+warchief questions
+
+# Answer
+warchief answer <task-id> "Use PostgreSQL, not SQLite"
+```
+
+### Feedback & Control
+
+| Command | Effect |
+|---------|--------|
+| `warchief answer <id> "text"` | Answer agent question, unblock task |
+| `warchief tell <id> "text"` | Message for next agent spawn (doesn't interrupt) |
+| `warchief nudge <id> "text"` | Kill current agent + restart with message |
+| `warchief retry <id> "text"` | Reopen closed/failed task with feedback |
+| `warchief approve <id>` | Approve task after manual testing |
+| `warchief reject <id> "text"` | Reject after testing, back to development |
+| `warchief drop <id>` | Kill agent, close task, clean up logs |
+
+### MCP Tool Grants
+
+Agents run with restricted tool permissions by default. Grant additional tools (MCP servers, plugins) per-task:
+
+```bash
+# At task creation
+warchief create "Design login page" --tools "mcp__figma-console__*,mcp__figma__*"
+
+# Grant tools to existing task
+warchief grant <task-id> figma console
+warchief grant <task-id> supabase
+warchief grant <task-id> --list   # show available MCP servers
+
+# Auto-detected when answering questions
+warchief answer <task-id> "allow figma console tools"
+# → resolves to mcp__figma-console__* and updates task permissions
+```
+
+Tool discovery reads from three sources:
+- `~/.claude.json` mcpServers → `mcp__{name}__*`
+- `~/.claude/settings.json` plugins → `mcp__plugin_{name}_{key}__*`
+- Claude.ai built-in MCPs → `mcp__claude_ai_{Name}__*`
+
+## Dashboards
+
+### Web Dashboard
+
+Interactive web UI with live WebSocket updates:
+
+```bash
+pip install -e ".[web]"
+warchief dashboard --web              # http://localhost:8095
+warchief dashboard --web --port 8096  # custom port
+```
+
+Features:
+- Pipeline visualization with task cards flowing through stages
+- Agent monitoring (role, task, age, alive/zombie status)
+- Token tracking: input, cache read, cache write, output (shown separately, not summed)
+- Cost breakdown by model and role (session + all-time)
+- Questions panel with inline answer input
+- Action buttons: drop, grant, nudge, tell
+- WebSocket auto-refresh every 2 seconds
+
+### Terminal Dashboard
+
+Rich live-updating terminal dashboard:
+
+```bash
+pip install -e ".[ui]"
+warchief dashboard          # live auto-refresh
+warchief dashboard --snapshot  # single snapshot
+```
+
+### Tmux UI
+
+4-pane layout launched automatically by `warchief start`:
+
+```
+┌──────────────┬──────────────┐
+│  Dashboard   │   Agent      │
+│  (live)      │   Logs       │
+├──────────────┤   (auto-     │
+│  Orchestrator│    follows)  │
+│  (watcher)   │              │
+├──────────────┴──────────────┤
+│  Control (answer/tell/nudge) │
+└─────────────────────────────┘
+```
+
+## Cost Tracking
+
+Every agent's token usage is tracked automatically:
+
+```
+claude (stream-json) → agent_log_writer (.usage.json) → watcher (costs.jsonl) → dashboard
+```
+
+- **Per-agent**: input, output, cache read, cache write tokens
+- **Cost estimation**: uses Anthropic pricing per model (Opus/Sonnet/Haiku rates)
+- **Session vs all-time**: web dashboard shows both
+- **By model**: see how much Opus vs Sonnet is costing
+- **By role**: see developer vs reviewer vs tester costs
+- **Budget checks**: `check_budget(project_root, budget_usd)` API
+
+```bash
+warchief costs   # CLI cost breakdown
+```
+
+Token display shows each type separately (not lumped together):
+- **Input** — actual input tokens
+- **Cache Read** — tokens read from prompt cache (cheaper rate)
+- **Cache Write** — tokens written to cache
+- **Output** — generated tokens
+
+## Commands Reference
+
+### Task Management
+
+```bash
+warchief create "title" [--type feature|bug|investigation] [--priority 1-10]
+                        [--labels "a,b"] [--deps "wc-id1,wc-id2"]
+                        [--tools "mcp__figma__*"] [--description "..."]
+warchief list [--status open|blocked|closed] [--stage development] [--label security]
+warchief show <id> [--json]
+warchief update <id> [--status open|blocked|closed] [--add-label x] [--remove-label x]
+warchief drop <id>                    # kill agent + close + cleanup
+warchief grant <id> <tools>           # grant MCP tools
+warchief grant <id> --list            # list available MCP servers
+warchief release <id> --stage <stage> # manually place task in pipeline
+```
+
+### Pipeline Control
+
+```bash
+warchief start ["requirement"]   # create task + launch tmux UI + pipeline
+warchief start --no-tmux         # without tmux
+warchief watch                   # run orchestrator (no tmux)
+warchief stop                    # stop orchestrator
+warchief pause                   # pause (no new agent spawns)
+warchief resume                  # resume
+warchief status                  # show pipeline + agents + watcher state
+warchief kill-agent <agent-id>   # kill specific agent
+```
+
+### Monitoring
+
+```bash
+warchief dashboard [--web] [--port 8095] [--snapshot] [--refresh 2.0]
+warchief board                   # kanban board
+warchief feed                    # activity event feed
+warchief metrics                 # pipeline metrics
+warchief costs                   # cost breakdown
+warchief logs <agent> [-f] [-n 50] [--events]
+warchief questions               # list pending agent questions
+warchief observe                 # export Prometheus metrics
+```
+
+### Communication
+
+```bash
+warchief answer <id> "answer text"
+warchief tell <id> "message"
+warchief nudge <id> "message"    # kill + restart + message
+warchief retry <id> "feedback"   # reopen closed task
+warchief approve <id>            # approve after manual testing
+warchief reject <id> "feedback"  # reject after testing
+```
+
+### Operations
+
+```bash
+warchief doctor                  # health checks (10 diagnostics)
+warchief backup                  # backup state
+warchief restore <file>          # restore from backup
+warchief purge [--keep-closed] [--keep-events 500]
+warchief daemon start|stop|status
+warchief sessions                # list active sessions
+warchief connect [session]       # connect to running session
+warchief config [key] [value]    # view/edit config
+```
+
+## Configuration
+
+`.warchief/config.toml`:
+
+```toml
+max_total_agents = 8          # global agent limit
+base_branch = "main"          # default base branch
+paused = false                # pause pipeline
+agent_timeout = 3600          # kill agents older than this (seconds)
+
+[role_models]                 # override default models per role
+conductor = "claude-opus-4-20250514"
+developer = "claude-sonnet-4-20250514"
+
+[max_role_agents]             # override max concurrent per role
+developer = 6
+reviewer = 4
+
+[testing]
+test_command = "npm test"
+e2e_command = "npx playwright test"
+test_timeout = 300
+auto_run = true
+```
 
 ## Project Structure
 
 ```
 your-project/
-├── .warchief/                  # Created by 'warchief init'
-│   ├── warchief.db             # SQLite database (WAL mode)
-│   ├── config.toml             # Project configuration
-│   ├── warchief.log            # Log file
-│   ├── watcher.lock            # Single-watcher enforcement
-│   ├── daemon.pid              # Daemon PID file
-│   ├── heartbeats/             # Agent heartbeat files
-│   ├── nudges/                 # Ephemeral agent notifications
-│   ├── costs.jsonl             # Token usage tracking
-│   ├── metrics.prom            # Prometheus metrics export
-│   └── backups/                # Compressed state backups
-├── .warchief-worktrees/        # Agent worktrees (auto-managed)
-│   ├── developer-thrall/
-│   ├── reviewer-jaina/
+├── .warchief/                    # Created by 'warchief init'
+│   ├── warchief.db               # SQLite (WAL mode, optimistic locking)
+│   ├── config.toml               # Project configuration
+│   ├── warchief.log              # Orchestrator log
+│   ├── watcher.lock              # Single-watcher enforcement (flock)
+│   ├── daemon.pid                # Daemon PID
+│   ├── agent-logs/               # Per-agent output logs
+│   │   ├── developer-thrall-a1b2.log
+│   │   ├── developer-thrall-a1b2.prompt
+│   │   └── developer-thrall-a1b2.usage.json
+│   ├── costs.jsonl               # Accumulated token usage
+│   ├── heartbeats/               # Agent heartbeat files
+│   ├── nudges/                   # Ephemeral nudge notifications
+│   └── backups/                  # Compressed state backups
+├── .warchief-worktrees/          # Agent worktrees (auto-managed)
+│   ├── developer-thrall-a1b2/
+│   ├── reviewer-jaina-c3d4/
 │   └── ...
 └── (your project files)
 ```
 
-## Configuration
+## Warchief Framework Structure
 
-Edit `.warchief/config.toml` or use `warchief config`:
-
-```toml
-max_total_agents = 8
-base_branch = "main"
-paused = false
-agent_timeout = 3600
-
-[role_models]
-conductor = "claude-opus-4-20250514"
-developer = "claude-sonnet-4-20250514"
-
-[max_role_agents]
-developer = 6
-reviewer = 4
 ```
+warchief/
+├── __main__.py          # CLI entry point — all commands
+├── watcher.py           # Orchestrator loop — spawns agents, detects zombies
+├── spawner.py           # Builds prompts, launches Claude CLI with worktrees
+├── state_machine.py     # Stage transitions (pure functions, no side effects)
+├── prime.py             # Agent context injection (Q&A, feedback, previous logs)
+├── cost_tracker.py      # Token usage tracking, cost estimation, budget checks
+├── agent_log_writer.py  # Captures Claude stream-json, writes .usage.json
+├── mcp_discovery.py     # MCP tool discovery from Claude config + plugins
+├── task_store.py        # SQLite persistence (tasks, agents, messages, events)
+├── models.py            # Data classes (TaskRecord, AgentRecord, etc.)
+├── config.py            # Stage definitions, role mappings, TOML config
+├── worktree.py          # Git worktree lifecycle (create/remove/cleanup)
+├── hooks.py             # Claude Code hooks for agent enforcement
+├── tmux_ui.py           # 4-pane tmux layout
+├── dashboard.py         # Terminal dashboard (rich.live + plain text)
+├── control.py           # Interactive REPL for tmux control pane
+├── agent_monitor.py     # Live agent log viewer, auto-follows newest
+├── test_runner.py       # Runs project test commands in worktrees
+├── conductor.py         # Requirement → task decomposition
+├── doctor.py            # 10 health checks
+├── roles/               # Role definitions (TOML)
+│   ├── developer.toml
+│   ├── reviewer.toml
+│   └── ...
+├── web/                 # Web dashboard
+│   ├── app.py           # FastAPI + WebSocket + REST API
+│   └── static/
+│       └── index.html   # Single-page dashboard (inline CSS/JS)
+└── (other modules: backup, daemon, feed, metrics, recovery, etc.)
 
-## Task Creation Options
+prompts/                 # Agent system prompts (Markdown)
+├── developer.md
+├── reviewer.md
+├── conductor.md
+└── ...
 
-```bash
-warchief create "title" \
-  --type feature|bug|investigation \
-  --priority 1-10 \
-  --labels "security,frontend" \
-  --deps "wc-abc123,wc-def456" \
-  --description "detailed description"
+tests/                   # 433 tests across 28 files
+├── test_watcher.py
+├── test_spawner.py
+├── test_state_machine.py
+└── ...
 ```
 
 ## Troubleshooting
 
-### "Watcher not running" warning
-This is normal if you haven't started the pipeline. Run `warchief start` or `warchief watch`.
-
-### Agents failing to spawn
-Run `warchief doctor` to diagnose. Common issues:
-- `claude` CLI not on PATH
-- Not in a git repository
-- No commits on the base branch
-
-### Tasks stuck in "open"
-Check if there's a watcher running: `warchief status`. If agents keep failing, check `warchief feed` for error events.
-
-### Cleanup after errors
 ```bash
-warchief doctor        # See what's wrong
-warchief status        # Check state
-# If needed, manually reset:
-warchief update <id> --status open
+warchief doctor   # Run all 10 health checks
 ```
 
-## Architecture
+| Problem | Solution |
+|---------|----------|
+| "Watcher not running" | Run `warchief start` or `warchief watch` |
+| Agents failing to spawn | Check `warchief doctor` — usually `claude` not on PATH |
+| Tasks stuck in "open" | Check `warchief status` — watcher might not be running |
+| Tasks stuck in "in_progress" | Agent may have died — `warchief doctor` detects orphans |
+| Agent can't use MCP tools | Grant tools: `warchief grant <id> figma console` |
+| High token costs | Check `warchief costs` — Opus roles cost more |
+| Port 8095 already in use | Use `--port 8096` or kill the old process |
+| Worktree errors | Run `warchief purge` to clean up stale worktrees |
 
-- **Zero runtime dependencies** — stdlib only (rich/textual optional for UI)
+## Architecture Principles
+
+- **Zero runtime dependencies** — stdlib only; rich/textual/fastapi are optional extras
 - **SQLite WAL mode** — concurrent agent access with optimistic locking
-- **Pure-function state machine** — no side effects, fully testable
-- **TOML configuration** — roles, pipelines, and config all in TOML
-- **File-based heartbeats** — simple, no network required
-- **fcntl.flock** — single-watcher and scheduler enforcement
-- **335 tests** across 28 test files
+- **Pure-function state machine** — no side effects, fully testable transitions
+- **Git worktree isolation** — each agent gets its own working copy
+- **TOML configuration** — roles, pipelines, and project config
+- **File-based heartbeats** — simple, no network coordination required
+- **`.claudeignore` in worktrees** — prevents agents from scanning node_modules, dist, etc.
+- **Context budget management** — agent prompts are truncated to prevent token waste
+- **433 tests** across 28 test files, ~15,700 lines of code

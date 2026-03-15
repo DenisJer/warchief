@@ -305,6 +305,21 @@ def run_server(project_root: Path, port: int = 8095) -> None:
     _project_root = project_root
     _session_start = time.time()
 
+    import socket
     import uvicorn
+
+    # Auto-find available port starting from requested port
+    for attempt in range(20):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.bind(("0.0.0.0", port))
+            sock.close()
+            break
+        except OSError:
+            port += 1
+    else:
+        print(f"Error: Could not find an available port (tried {port - 20} to {port - 1})", file=__import__('sys').stderr)
+        return
+
     print(f"Warchief Web Dashboard: http://localhost:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
