@@ -93,11 +93,20 @@ def _build_state() -> dict:
                         if reason:
                             block_reason = reason
                             break
+            # Find last agent that worked on this task (for logs button)
+            last_agent_id = agent.id if agent else None
+            if not last_agent_id:
+                task_evts = store.get_events(task_id=t.id, limit=10)
+                for ev in task_evts:
+                    if ev.agent_id:
+                        last_agent_id = ev.agent_id
+                        break
             cards.append({
                 "id": t.id,
                 "title": t.title,
                 "status": t.status,
                 "agent_id": agent.id if agent else None,
+                "last_agent_id": last_agent_id,
                 "age": age,
                 "labels": t.labels,
                 "scratchpad": scratchpad[:500] if scratchpad else "",

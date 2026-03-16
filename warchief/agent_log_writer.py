@@ -68,11 +68,21 @@ def stream_to_readable(input_stream=None, output_stream=None) -> None:
                         out.write(f"  Pattern: {pattern}\n")
                     out.flush()
 
+        elif event_type == "system":
+            # Capture session ID from system events
+            session_id = event.get("session_id", "")
+            if session_id:
+                _save_session_id(session_id)
+
         elif event_type == "result":
             ts = time.strftime("%H:%M:%S")
             cost = event.get("cost_usd")
             duration = event.get("duration_ms")
             usage = event.get("usage", {})
+            # Session ID may also appear in result
+            session_id = event.get("session_id", "")
+            if session_id:
+                _save_session_id(session_id)
             out.write(f"\n[{ts}] Agent finished")
             if cost is not None:
                 out.write(f" (cost: ${cost:.4f})")
@@ -93,6 +103,21 @@ def stream_to_readable(input_stream=None, output_stream=None) -> None:
             ts = time.strftime("%H:%M:%S")
             out.write(f"\n[{ts}] ERROR: {error_msg}\n")
             out.flush()
+
+
+def _save_session_id(session_id: str) -> None:
+    """Save the Claude session ID for potential resume later."""
+    agent_id = os.environ.get("WARCHIEF_AGENT", "")
+    db_path = os.environ.get("WARCHIEF_DB", "")
+    if not agent_id or not db_path:
+        return
+    logs_dir = os.path.join(os.path.dirname(db_path), "agent-logs")
+    session_path = os.path.join(logs_dir, f"{agent_id}.session")
+    try:
+        with open(session_path, "w") as f:
+            f.write(session_id)
+    except OSError:
+        pass
 
 
 def _write_usage_summary(result_event: dict) -> None:
@@ -119,6 +144,7 @@ def _write_usage_summary(result_event: dict) -> None:
         "cache_read_tokens": usage.get("cache_read_input_tokens", 0),
         "cache_write_tokens": usage.get("cache_creation_input_tokens", 0),
         "model": result_event.get("model", ""),
+        "session_id": result_event.get("session_id", ""),
         "timestamp": time.time(),
     }
 

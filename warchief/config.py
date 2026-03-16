@@ -79,9 +79,9 @@ def detect_default_branch(project_root: "Path | None" = None) -> str:
 POLL_INTERVAL = 5
 MAX_SPAWNS_PER_CYCLE = 2
 REJECTION_COOLDOWN = 60
-MAX_REJECTIONS = 3
+MAX_REJECTIONS = 2
 MAX_CRASHES = 3
-MAX_TOTAL_SPAWNS = 20
+MAX_TOTAL_SPAWNS = 10
 ZOMBIE_THRESHOLD = 120
 DAEMON_HEARTBEAT = 30
 MASS_DEATH_WINDOW = 30
@@ -103,8 +103,8 @@ class TestingConfig:
 @dataclass
 class BudgetConfig:
     """Cost budget limits. Pipeline pauses or tasks block when exceeded."""
-    session_limit: float = 0.0      # 0 = no limit. Pauses entire pipeline
-    per_task_default: float = 0.0   # 0 = no limit. Default per-task budget
+    session_limit: float = 10.0     # Pauses entire pipeline at this cost
+    per_task_default: float = 2.0   # Default per-task budget (override with --budget)
     warn_at_percent: int = 80       # Log warning at this % of budget
 
 

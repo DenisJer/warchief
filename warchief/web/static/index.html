@@ -596,12 +596,12 @@
           else if (t.labels.indexOf('budget-exceeded') >= 0) blockedReason = 'Budget limit exceeded — approve more or drop';
           else if (t.labels.indexOf('decomposed') >= 0) blockedReason = 'Decomposed into sub-tasks';
           else if (t.labels.indexOf('needs-testing') >= 0) blockedReason = 'Waiting for manual test approval';
-          else blockedReason = t.block_reason || 'Blocked — check events for details';
+          else blockedReason = friendlyBlockReason(t.block_reason) || 'Blocked — check agent logs for details';
         }
         return '<div class="task-card">' +
           '<div class="task-id">' + esc(t.id) + '</div>' +
           '<div class="task-title">' + esc(t.title) + '</div>' +
-          (blockedReason ? '<div style="margin-top:4px;padding:4px 8px;background:#2a1a0a;border-left:3px solid #f0b27a;border-radius:0 3px 3px 0;font-size:11px;color:#f0b27a">' + esc(blockedReason) + '</div>' : '') +
+          (blockedReason ? '<div style="margin-top:4px;padding:4px 8px;background:#2a1a0a;border-left:3px solid #f0b27a;border-radius:0 3px 3px 0;font-size:11px;color:#f0b27a">' + blockedReason + '</div>' : '') +
           '<div class="task-meta"><span class="' + statusCls + '">' + esc(t.status) + '</span>' +
           (t.labels && t.labels.indexOf('budget-exceeded') >= 0 ? '<span class="status" style="background:#8C1616;color:#FFD100">$OVER</span>' : '') +
           '<span>' + esc(t.age) + '</span></div>' +
@@ -638,8 +638,9 @@
               actions += '<button class="btn" style="border-color:#85c1e9;color:#85c1e9" title="Split into smaller sub-tasks that run in parallel" onclick="openDecomposeModal(\'' + esc(t.id) + '\')">Decompose</button>';
             }
             // View agent logs — link to agents page with the agent pre-selected
-            if (t.agent_id) {
-              actions += '<button class="btn" title="View agent output log" onclick="window.open(\'/agents#\' + \'' + esc(t.agent_id) + '\',\'_blank\')">logs</button>';
+            var logAgentId = t.agent_id || t.last_agent_id;
+            if (logAgentId) {
+              actions += '<button class="btn" title="View agent output log" onclick="window.open(\'/agents#\' + \'' + esc(logAgentId) + '\',\'_blank\')">logs</button>';
             }
             // Default actions
             actions += '<button class="btn btn-danger" title="Kill agent, close task, clean up" onclick="doAction(\'drop\',\'' + esc(t.id) + '\')">drop</button>';
@@ -959,6 +960,30 @@
   document.getElementById('createTitle').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') submitCreate();
   });
+
+  // Translate technical block reasons into user-friendly messages with actions
+  function friendlyBlockReason(reason) {
+    if (!reason) return '';
+    if (/no commits after/i.test(reason))
+      return 'Agent couldn\'t complete the work (no code committed). ' +
+        'Click <b>logs</b> to see what happened, then <b>Retry</b> with more specific instructions.';
+    if (/crashed.*times/i.test(reason))
+      return 'Agent crashed repeatedly. ' +
+        'Click <b>logs</b> for error details. <b>Retry</b> or <b>Decompose</b> into smaller tasks.';
+    if (/spawn limit/i.test(reason))
+      return 'Too many agent attempts without progress. ' +
+        '<b>Retry</b> with clearer instructions, or <b>Drop</b> and create a simpler task.';
+    if (/rejected.*times/i.test(reason))
+      return 'Code rejected multiple times by reviewer. ' +
+        'Click <b>logs</b> to see reviewer feedback, then <b>Retry</b> with guidance.';
+    if (/budget exceeded/i.test(reason))
+      return 'Task spent more than its budget. ' +
+        '<b>Drop</b> or increase the budget.';
+    if (/worktree|directory/i.test(reason))
+      return 'Agent\'s working directory was lost. ' +
+        '<b>Retry</b> — this is usually a temporary issue.';
+    return esc(reason);
+  }
 
   // Watcher start/stop
   async function toggleWatcher() {

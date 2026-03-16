@@ -27,12 +27,21 @@ default = "claude-sonnet-4-20250514"
 
 [limits]
 max_concurrent_agents = 8
-max_total_spawns = 50
+max_total_spawns = 10
 
 [paths]
 pipelines_dir = "pipelines"
 roles_dir = "warchief/roles"
 prompts_dir = "prompts"
+
+# Budget — cost limits to prevent runaway spending.
+# session_limit: pauses entire pipeline when session cost exceeds this (0 = no limit)
+# per_task_default: blocks individual tasks when their cost exceeds this (0 = no limit)
+# Tasks can override with: warchief create "title" --budget 5.00
+[budget]
+session_limit = 10.00
+per_task_default = 2.00
+warn_at_percent = 80
 
 # Testing — configure your project's test commands.
 # Tests run automatically after code review, before PR creation.
@@ -941,6 +950,12 @@ def cmd_drop(args: argparse.Namespace) -> None:
     # Clean up scratchpad
     from warchief.scratchpad import clear_scratchpad
     clear_scratchpad(project_root, task.id)
+
+    # Clean up saved sessions
+    sessions_dir = project_root / ".warchief" / "sessions"
+    if sessions_dir.exists():
+        for sf in sessions_dir.glob(f"{task.id}-*.session"):
+            sf.unlink(missing_ok=True)
 
     print(f"Dropped task {task.id} \"{task.title}\" ({cleaned} log files cleaned)")
 

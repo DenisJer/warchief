@@ -354,16 +354,45 @@ def spawn_agent(
         except Exception as e:
             log.warning("Failed to install project context for %s: %s", agent_id, e)
 
-    # Build command
-    cmd, cwd, task_prompt = build_claude_command(
-        role, registry, task, worktree_path, project_root, config,
-    )
+    # Check for resumable session (saves tokens on rejection cycles)
+    resume_session_id = None
+    session_path = project_root / ".warchief" / "sessions" / f"{task.id}-{role}.session"
+    if task.rejection_count > 0 and session_path.exists():
+        try:
+            session_data = json.loads(session_path.read_text())
+            resume_session_id = session_data.get("session_id", "")
+            if resume_session_id:
+                log.info("Found resumable session %s for task %s (%s)",
+                         resume_session_id[:12], task.id, role)
+        except (json.JSONDecodeError, OSError):
+            pass
 
-    # Inject prime context (previous attempts, rejections, task history)
-    from warchief.prime import build_prime_context
-    prime_ctx = build_prime_context(task, role, store, project_root)
-    if prime_ctx:
-        task_prompt += "\n" + prime_ctx
+    if resume_session_id:
+        # Resume mode — send only the rejection feedback as new prompt
+        from warchief.prime import build_prime_context
+        prime_ctx = build_prime_context(task, role, store, project_root)
+        task_prompt = (
+            f"Your previous work on task {task.id} was REJECTED by the reviewer.\n"
+            f"Please fix the issues and try again.\n\n"
+            f"{prime_ctx}"
+        )
+        cmd, cwd, _ = build_claude_command(
+            role, registry, task, worktree_path, project_root, config,
+        )
+        cmd.extend(["--resume", resume_session_id])
+        log.info("Resuming session for %s: %s (rejection #%d)",
+                 agent_id, resume_session_id[:12], task.rejection_count)
+    else:
+        # Fresh spawn — full prompt
+        cmd, cwd, task_prompt = build_claude_command(
+            role, registry, task, worktree_path, project_root, config,
+        )
+
+        # Inject prime context (previous attempts, rejections, task history)
+        from warchief.prime import build_prime_context
+        prime_ctx = build_prime_context(task, role, store, project_root)
+        if prime_ctx:
+            task_prompt += "\n" + prime_ctx
 
     # Context budget warning — flag prompts that are unusually large
     _PROMPT_WARN_CHARS = 15_000  # ~4k tokens
