@@ -61,7 +61,7 @@ def _build_state() -> dict:
         pipeline: list[dict] = []
         agent_map = {a.current_task: a for a in agents if a.current_task}
         for stage in STAGES:
-            stage_tasks = [t for t in tasks if t.stage == stage]
+            stage_tasks = [t for t in tasks if t.stage == stage and t.status != "closed"]
             cards = []
             for t in stage_tasks:
                 agent = agent_map.get(t.id)
