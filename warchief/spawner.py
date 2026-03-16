@@ -335,7 +335,7 @@ def spawn_agent(
             store.update_task(task.id, crash_count=new_crash_count)
         return None
 
-    # Install hooks in agent worktree
+    # Install hooks and project context in agent worktree
     if worktree_path:
         from warchief.hooks import install_agent_hooks
         try:
@@ -345,6 +345,13 @@ def spawn_agent(
             )
         except Exception as e:
             log.warning("Failed to install hooks for %s: %s", agent_id, e)
+
+        # Install project context as CLAUDE.md — agents read it automatically
+        from warchief.project_context import install_context_in_worktree
+        try:
+            install_context_in_worktree(project_root, worktree_path)
+        except Exception as e:
+            log.warning("Failed to install project context for %s: %s", agent_id, e)
 
     # Build command
     cmd, cwd, task_prompt = build_claude_command(
