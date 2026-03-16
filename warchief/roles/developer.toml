@@ -5,7 +5,7 @@ max_concurrent = 6
 description = "Grunt of the Horde. Implements code in isolated worktrees."
 
 [model]
-default = "claude-sonnet-4-20250514"
+default = "claude-opus-4-6"
 max_turns = 30
 
 [permissions]
