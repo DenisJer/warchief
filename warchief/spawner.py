@@ -102,24 +102,40 @@ def build_claude_command(
     labels_str = ", ".join(task.labels) if task.labels else "none"
     deps_str = ", ".join(task.deps) if task.deps else "none"
 
-    task_prompt = (
-        f"You are a {role_name} agent working on task {task.id}.\n"
+    # Prompt structure for cache efficiency:
+    # 1. Role prompt (static, loaded above) — cacheable prefix
+    # 2. Hard rules (static) — cacheable
+    # 3. Task-specific details (dynamic) — changes per task
+    # 4. Exit instructions (per-role) — mostly static
+    # 5. Prime context (dynamic) — appended later in spawn_agent
+
+    # Static hard rules — same for every agent, every task
+    hard_rules = (
+        "\n## HARD RULES (violating these breaks the pipeline)\n"
+        "- NEVER `cd` outside your current working directory\n"
+        "- NEVER read/write/access the `.warchief/` directory\n"
+        "- NEVER run `warchief` commands other than `warchief agent-update`\n"
+        "- NEVER push to main/master — only work on feature branches\n"
+        "- NEVER run `git push` to any remote\n"
+        "- Be concise in output — avoid lengthy explanations, just write code and signal completion\n"
+    )
+
+    # Dynamic task details
+    task_details = (
+        f"\n## Your Assignment\n"
+        f"Task ID: {task.id}\n"
         f"Task: {task.title}\n"
         f"Description: {task.description}\n"
         f"Labels: {labels_str}\n"
         f"Dependencies: {deps_str}\n"
         f"Base branch: {task.base_branch or 'main'}\n"
-        f"\n## HARD RULES (violating these breaks the pipeline)\n"
-        f"- NEVER `cd` outside your current working directory\n"
-        f"- NEVER read/write/access the `.warchief/` directory\n"
-        f"- NEVER run `warchief` commands other than `warchief agent-update`\n"
-        f"- NEVER push to main/master — only work on feature branches\n"
-        f"- NEVER run `git push` to any remote\n"
         f"\n## Asking Questions\n"
         f"If you are unsure how to proceed or need clarification from the user, ask a question:\n"
         f"  warchief agent-update --task-id {task.id} --status blocked --question \"Your question here\"\n"
         f"Then EXIT immediately. The user will answer, and you will be re-spawned with their response.\n"
     )
+
+    task_prompt = hard_rules + task_details
 
     # Developer agents MUST commit AND update status — append explicit instructions
     log.info("BUILD_CMD: role_name=%r, prompt_path=%s, prompt_path_exists=%s",
@@ -245,7 +261,9 @@ def build_claude_command(
             f"  warchief agent-update --task-id {task.id} --status blocked --comment '<error details>'\n"
         )
 
-    # Load role prompt if available
+    # Load role prompt — placed FIRST for cache efficiency
+    # Claude caches from the prompt prefix, so static role prompt
+    # gets cached and shared across spawns of the same role
     if prompt_path and prompt_path.exists():
         role_prompt = prompt_path.read_text()
         task_prompt = role_prompt + "\n\n---\n\n" + task_prompt
