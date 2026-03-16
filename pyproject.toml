@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "warchief-orchestrator"
-version = "0.2.0"
+version = "0.2.1"
 description = "WoW-themed AI agent orchestration framework for Claude Code CLI. Coordinates parallel coding agents through automated pipelines."
 readme = "README.md"
 license = "MIT"
