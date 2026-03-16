@@ -53,7 +53,6 @@
     grid-template-rows: auto 1fr;
     gap: 12px;
     padding: 12px;
-    height: calc(100vh - 60px);
   }
 
   /* Pipeline spans full width on top */
@@ -66,7 +65,7 @@
     background: #16213e;
     border: 1px solid #2a2a4a;
     border-radius: 6px;
-    overflow: hidden;
+    overflow: visible;
   }
   .card-header {
     background: #0f0f23;
@@ -93,7 +92,7 @@
   }
   .stage-col {
     flex: 1;
-    min-width: 180px;
+    min-width: 160px;
     background: #0f0f23;
     border: 1px solid #2a2a4a;
     border-radius: 4px;
@@ -120,6 +119,8 @@
   .stage-tasks {
     padding: 6px;
     min-height: 50px;
+    max-height: 400px;
+    overflow-y: auto;
   }
 
   /* Task card inside stage */
@@ -155,7 +156,8 @@
   }
   .task-card .task-actions {
     display: flex;
-    gap: 4px;
+    flex-wrap: wrap;
+    gap: 3px;
     margin-top: 4px;
   }
 
@@ -186,6 +188,7 @@
     flex-direction: column;
     gap: 12px;
     overflow-y: auto;
+    min-height: 0;
   }
 
   /* Agent row */
@@ -440,6 +443,17 @@
   </div>
 </div>
 
+<!-- Scratchpad Viewer -->
+<div class="modal-overlay" id="scratchpadOverlay">
+  <div class="modal" style="min-width:600px;max-width:800px;max-height:80vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 id="scratchpadTitle">Notes</h3>
+      <button class="btn" onclick="closeScratchpad()">Close (Esc)</button>
+    </div>
+    <div id="scratchpadContent" style="flex:1;overflow-y:auto;background:#0a0a1a;border-radius:4px;padding:16px;font-family:'SF Mono','Fira Code','Consolas',monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;color:#e0e0e0"></div>
+  </div>
+</div>
+
 <!-- Decompose Modal -->
 <div class="modal-overlay" id="decomposeOverlay">
   <div class="modal" style="min-width:550px;max-height:80vh;overflow-y:auto">
@@ -527,32 +541,36 @@
           '<span>' + esc(t.age) + '</span></div>' +
           (agentStr ? '<div style="margin-top:2px">' + agentStr + '</div>' : '') +
           (function() {
-            var actions = '<div class="task-actions">';
+            var actions = '';
+            // View Plan / View Findings button
+            if (t.scratchpad) {
+              var viewLabel = 'View Notes';
+              if (t.labels && t.labels.indexOf('needs-plan-approval') >= 0) viewLabel = 'View Plan';
+              else if (t.labels && t.labels.indexOf('needs-review') >= 0) viewLabel = 'View Findings';
+              actions += '<button class="btn" style="border-color:#FFD100;color:#FFD100;margin-top:4px;width:100%" onclick="viewScratchpad(\'' + esc(t.id) + '\')">' + viewLabel + '</button>';
+            }
+            actions += '<div class="task-actions">';
             // Plan approval buttons
             if (t.labels && t.labels.indexOf('needs-plan-approval') >= 0) {
-              actions += '<button class="btn" style="border-color:#82e0aa;color:#82e0aa" onclick="doPlanAction(\'approve\',\'' + esc(t.id) + '\')">Approve Plan</button>';
-              actions += '<button class="btn" onclick="openModal(\'reject-plan\',\'' + esc(t.id) + '\')">Reject Plan</button>';
+              actions += '<button class="btn" style="border-color:#82e0aa;color:#82e0aa" title="Approve plan and advance to development" onclick="doPlanAction(\'approve\',\'' + esc(t.id) + '\')">Approve Plan</button>';
+              actions += '<button class="btn" title="Reject plan with feedback — planner will retry" onclick="openModal(\'reject-plan\',\'' + esc(t.id) + '\')">Reject Plan</button>';
             }
             // Investigation review buttons
             else if (t.labels && t.labels.indexOf('needs-review') >= 0) {
-              actions += '<button class="btn" style="border-color:#82e0aa;color:#82e0aa" onclick="doInvestAction(\'approve\',\'' + esc(t.id) + '\')">Accept</button>';
-              actions += '<button class="btn" onclick="openModal(\'reject-investigation\',\'' + esc(t.id) + '\')">More Info</button>';
-              actions += '<button class="btn" style="border-color:#FFD100;color:#FFD100" onclick="doInvestAction(\'escalate\',\'' + esc(t.id) + '\')">Escalate</button>';
+              actions += '<button class="btn" style="border-color:#82e0aa;color:#82e0aa" title="Accept findings and close investigation" onclick="doInvestAction(\'approve\',\'' + esc(t.id) + '\')">Accept</button>';
+              actions += '<button class="btn" title="Ask investigator to dig deeper with your feedback" onclick="openModal(\'reject-investigation\',\'' + esc(t.id) + '\')">More Info</button>';
+              actions += '<button class="btn" style="border-color:#FFD100;color:#FFD100" title="Create development tasks from findings" onclick="doInvestAction(\'escalate\',\'' + esc(t.id) + '\')">Escalate</button>';
             }
             // Decompose button (for planning stage or any non-decomposed task)
             if (!(t.labels && t.labels.indexOf('decomposed') >= 0)) {
-              actions += '<button class="btn" style="border-color:#85c1e9;color:#85c1e9" onclick="openDecomposeModal(\'' + esc(t.id) + '\')">Decompose</button>';
+              actions += '<button class="btn" style="border-color:#85c1e9;color:#85c1e9" title="Split into smaller sub-tasks that run in parallel" onclick="openDecomposeModal(\'' + esc(t.id) + '\')">Decompose</button>';
             }
             // Default actions
-            actions += '<button class="btn btn-danger" onclick="doAction(\'drop\',\'' + esc(t.id) + '\')">drop</button>';
-            actions += '<button class="btn" onclick="openModal(\'grant\',\'' + esc(t.id) + '\')">grant</button>';
-            actions += '<button class="btn" onclick="openModal(\'nudge\',\'' + esc(t.id) + '\')">nudge</button>';
-            actions += '<button class="btn" onclick="openModal(\'tell\',\'' + esc(t.id) + '\')">tell</button>';
+            actions += '<button class="btn btn-danger" title="Kill agent, close task, clean up" onclick="doAction(\'drop\',\'' + esc(t.id) + '\')">drop</button>';
+            actions += '<button class="btn" title="Grant MCP tools (e.g. Figma, Supabase)" onclick="openModal(\'grant\',\'' + esc(t.id) + '\')">grant</button>';
+            actions += '<button class="btn" title="Kill agent and restart with your message" onclick="openModal(\'nudge\',\'' + esc(t.id) + '\')">nudge</button>';
+            actions += '<button class="btn" title="Send message — next agent spawn will see it" onclick="openModal(\'tell\',\'' + esc(t.id) + '\')">tell</button>';
             actions += '</div>';
-            // Show scratchpad preview if available
-            if (t.scratchpad) {
-              actions += '<div style="margin-top:4px;padding:4px 6px;background:#0f0f23;border-radius:3px;font-size:10px;color:#888;max-height:60px;overflow:hidden;white-space:pre-wrap">' + esc(t.scratchpad.substring(0,200)) + '</div>';
-            }
             return actions;
           })() +
         '</div>';
@@ -763,7 +781,7 @@
 
   // Escape key to close modals
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') { closeModal(); closeCreateModal(); }
+    if (e.key === 'Escape') { closeModal(); closeCreateModal(); closeScratchpad(); closeDecomposeModal(); }
   });
 
   // Label picker
@@ -842,6 +860,30 @@
   document.getElementById('createTitle').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') submitCreate();
   });
+
+  // Scratchpad viewer
+  async function viewScratchpad(taskId) {
+    actionInProgress = true;
+    document.getElementById('scratchpadTitle').textContent = 'Notes — ' + taskId;
+    document.getElementById('scratchpadContent').textContent = 'Loading...';
+    document.getElementById('scratchpadOverlay').classList.add('active');
+    try {
+      var resp = await fetch('/api/scratchpad/' + encodeURIComponent(taskId));
+      var data = await resp.json();
+      var content = data.content || '(no notes yet)';
+      // Simple markdown-like rendering: bold headers
+      content = content.replace(/^### \[/gm, '\n### [');
+      document.getElementById('scratchpadContent').textContent = content;
+    } catch(e) {
+      document.getElementById('scratchpadContent').textContent = 'Error loading: ' + e.message;
+    }
+  }
+
+  function closeScratchpad() {
+    document.getElementById('scratchpadOverlay').classList.remove('active');
+    actionInProgress = false;
+    if (state) render(state);
+  }
 
   // Decompose modal
   let decomposeTaskId = null;

@@ -553,6 +553,13 @@ async def decompose_task(task_id: str, body: DecomposeBody):
         store.close()
 
 
+@app.get("/api/scratchpad/{task_id}")
+async def get_scratchpad(task_id: str):
+    """Get the full scratchpad content for a task."""
+    content = read_scratchpad(_project_root, task_id)
+    return {"content": content, "task_id": task_id}
+
+
 @app.get("/api/agent-file")
 async def get_agent_file(path: str):
     """Read a file from an agent's worktree. Only serves files under .warchief-worktrees/."""
