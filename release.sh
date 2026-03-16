@@ -61,5 +61,36 @@ git add pyproject.toml
 git commit -m "release: v${NEW}"
 git tag "v${NEW}"
 git push origin main --tags
+echo "Published to PyPI"
+
+# Update Homebrew formula
+TARBALL="warchief_orchestrator-${NEW}.tar.gz"
+TARBALL_URL="https://files.pythonhosted.org/packages/source/w/warchief-orchestrator/${TARBALL}"
+echo "Waiting for PyPI to propagate..."
+sleep 5
+SHA256=$(curl -sL "$TARBALL_URL" | shasum -a 256 | awk '{print $1}')
+if [ -z "$SHA256" ] || [ "$SHA256" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ]; then
+  echo "Warning: Could not fetch tarball from PyPI (may need more time). Update Homebrew formula manually."
+else
+  TAP_DIR=$(mktemp -d)
+  git clone --depth 1 https://github.com/DenisJer/homebrew-tap.git "$TAP_DIR" 2>/dev/null
+  FORMULA="$TAP_DIR/Formula/warchief.rb"
+  if [ -f "$FORMULA" ]; then
+    sed -i '' "s|url \".*\"|url \"${TARBALL_URL}\"|" "$FORMULA"
+    sed -i '' "s|sha256 \".*\"|sha256 \"${SHA256}\"|" "$FORMULA"
+    cd "$TAP_DIR"
+    git add Formula/warchief.rb
+    git commit -m "Update warchief to v${NEW}"
+    git push origin main
+    cd -
+    echo "Homebrew formula updated"
+  else
+    echo "Warning: Homebrew formula not found at $FORMULA"
+  fi
+  rm -rf "$TAP_DIR"
+fi
+
 echo ""
-echo "Done! v${NEW} is live at https://pypi.org/project/warchief-orchestrator/${NEW}/"
+echo "Done! v${NEW} is live:"
+echo "  PyPI: https://pypi.org/project/warchief-orchestrator/${NEW}/"
+echo "  Brew: brew upgrade warchief"
