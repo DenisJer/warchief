@@ -690,6 +690,42 @@ async def get_scratchpad(task_id: str):
     return {"content": content, "task_id": task_id}
 
 
+@app.get("/api/agent-diff")
+async def get_agent_diff(path: str):
+    """Get git diff for a file in an agent's worktree."""
+    import subprocess
+    safe_path = Path(path).resolve()
+    worktrees_dir = (_project_root / ".warchief-worktrees").resolve()
+    if not str(safe_path).startswith(str(worktrees_dir)):
+        return {"error": "Access denied — only worktree files allowed"}
+
+    # Find the worktree root (first directory under .warchief-worktrees/)
+    parts = safe_path.relative_to(worktrees_dir).parts
+    if not parts:
+        return {"error": "Invalid path"}
+    wt_root = worktrees_dir / parts[0]
+    rel_file = str(safe_path.relative_to(wt_root))
+
+    try:
+        result = subprocess.run(
+            ["git", "diff", "HEAD", "--", rel_file],
+            cwd=str(wt_root), capture_output=True, text=True, timeout=10,
+        )
+        diff = result.stdout
+        if not diff:
+            # Maybe it's a new file — show entire content as addition
+            result = subprocess.run(
+                ["git", "diff", "--no-index", "/dev/null", rel_file],
+                cwd=str(wt_root), capture_output=True, text=True, timeout=10,
+            )
+            diff = result.stdout
+        if not diff and safe_path.exists():
+            diff = f"(no changes detected — file may already be committed)\n\nCurrent content:\n{safe_path.read_text(errors='replace')[:20000]}"
+        return {"diff": diff[:50000], "path": str(safe_path)}
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/agent-file")
 async def get_agent_file(path: str):
     """Read a file from an agent's worktree. Only serves files under .warchief-worktrees/."""

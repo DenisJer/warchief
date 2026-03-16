@@ -154,6 +154,14 @@
   /* File path links in log */
   .file-link { color: #FFD100; cursor: pointer; text-decoration: underline; text-decoration-style: dotted; }
   .file-link:hover { color: #fff; }
+  .diff-link { color: #82e0aa; cursor: pointer; text-decoration: underline; text-decoration-style: dotted; font-size: 10px; margin-left: 6px; }
+  .diff-link:hover { color: #fff; }
+
+  /* Diff coloring */
+  .diff-add { color: #82e0aa; background: rgba(130,224,170,0.08); }
+  .diff-del { color: #f1948a; background: rgba(241,148,138,0.08); }
+  .diff-hunk { color: #85c1e9; font-weight: bold; }
+  .diff-meta { color: #888; }
 
   /* File viewer overlay */
   .file-overlay {
@@ -247,8 +255,25 @@
 <script>
   let selectedAgent = null;
   let autoFollow = true;
+  let userScrolledUp = false;
+  let lastLogHash = '';
   let pollTimer = null;
   let agents = [];
+
+  // Detect when user scrolls up in log — pause auto-follow
+  document.getElementById('logContent').addEventListener('scroll', function() {
+    var el = this;
+    var atBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 30;
+    if (!atBottom && !userScrolledUp) {
+      userScrolledUp = true;
+      autoFollow = false;
+      document.getElementById('autoFollowBtn').classList.remove('active');
+    } else if (atBottom && userScrolledUp) {
+      userScrolledUp = false;
+      autoFollow = true;
+      document.getElementById('autoFollowBtn').classList.add('active');
+    }
+  });
 
   function statusClass(s) {
     return 'status-' + (s || 'dead');
@@ -355,17 +380,27 @@
         content.innerHTML = '<div class="log-empty">No log output yet</div>';
         return;
       }
+      // Only update DOM if content changed (avoids scroll reset)
+      var newHash = data.total + ':' + data.lines[data.lines.length - 1];
+      if (newHash === lastLogHash) return;
+      lastLogHash = newHash;
+
+      var scrollPos = content.scrollTop;
       content.innerHTML = data.lines.map(function(line) {
         var cls = colorLogLine(line);
         var escaped = esc(line);
         // Make file paths clickable (matches /path/to/file.ext patterns)
         escaped = escaped.replace(/(\/[\w.\-\/]+\.warchief-worktrees\/[^\s,)'"]+)/g, function(match) {
-          return '<span class="file-link" onclick="viewFile(\'' + match.replace(/'/g, "\\'") + '\')">' + match + '</span>';
+          var links = '<span class="file-link" onclick="viewFile(\'' + match.replace(/'/g, "\\'") + '\')">' + match + '</span>';
+          links += '<span class="diff-link" onclick="viewDiff(\'' + match.replace(/'/g, "\\'") + '\')">[diff]</span>';
+          return links;
         });
         return cls ? '<span class="' + cls + '">' + escaped + '</span>' : escaped;
       }).join('\n');
       if (autoFollow) {
         content.scrollTop = content.scrollHeight;
+      } else {
+        content.scrollTop = scrollPos;
       }
       document.getElementById('logInfo').innerHTML = (document.getElementById('logInfo').textContent.split('|')[0] || '') + '| ' + data.total + ' lines';
     } catch(e) { console.error('Failed to load log', e); }
@@ -406,6 +441,37 @@
       }).join('\n');
     } catch(e) {
       document.getElementById('fileOverlayContent').innerHTML = '<div class="file-overlay-error">Failed to load file: ' + esc(e.message) + '</div>';
+    }
+  }
+
+  async function viewDiff(filePath) {
+    document.getElementById('fileOverlayPath').textContent = 'Diff: ' + filePath;
+    document.getElementById('fileOverlayContent').innerHTML = '<div style="color:#888;padding:20px">Loading diff...</div>';
+    document.getElementById('fileOverlay').classList.add('active');
+
+    try {
+      var resp = await fetch('/api/agent-diff?path=' + encodeURIComponent(filePath));
+      var data = await resp.json();
+      if (data.error) {
+        document.getElementById('fileOverlayContent').innerHTML = '<div class="file-overlay-error">' + esc(data.error) + '</div>';
+        return;
+      }
+      var diffText = data.diff || '';
+      if (!diffText) {
+        document.getElementById('fileOverlayContent').innerHTML = '<div class="file-overlay-error">No diff available — file may not exist or worktree was cleaned up</div>';
+        return;
+      }
+      var lines = diffText.split('\n');
+      document.getElementById('fileOverlayContent').innerHTML = lines.map(function(line) {
+        var cls = '';
+        if (line.startsWith('+') && !line.startsWith('+++')) cls = 'diff-add';
+        else if (line.startsWith('-') && !line.startsWith('---')) cls = 'diff-del';
+        else if (line.startsWith('@@')) cls = 'diff-hunk';
+        else if (line.startsWith('diff ') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) cls = 'diff-meta';
+        return cls ? '<span class="' + cls + '">' + esc(line) + '</span>' : esc(line);
+      }).join('\n');
+    } catch(e) {
+      document.getElementById('fileOverlayContent').innerHTML = '<div class="file-overlay-error">Failed: ' + esc(e.message) + '</div>';
     }
   }
 
