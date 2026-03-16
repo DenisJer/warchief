@@ -635,7 +635,8 @@ def _start_setup_tasks(args: argparse.Namespace) -> None:
     store = _get_store()
 
     install_hooks(project_root)
-    base = config.base_branch or "main"
+    from warchief.config import detect_default_branch
+    base = config.base_branch or detect_default_branch(project_root)
 
     # If a requirement is given, run conductor to decompose it
     requirement = getattr(args, "requirement", None)

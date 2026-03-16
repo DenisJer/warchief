@@ -50,6 +50,32 @@ SPECIAL_LABELS = ["rejected", "waiting", "security", "frontend", "question", "ne
 
 # --- Tuning Constants (defaults, overridable in config.toml) ---
 
+def detect_default_branch(project_root: "Path | None" = None) -> str:
+    """Detect the default branch (main or master) for a git repo."""
+    import subprocess
+    cwd = str(project_root) if project_root else None
+    for branch in ("main", "master"):
+        try:
+            subprocess.run(
+                ["git", "show-ref", "--verify", f"refs/heads/{branch}"],
+                cwd=cwd, check=True, capture_output=True,
+            )
+            return branch
+        except (subprocess.CalledProcessError, OSError):
+            continue
+    # Check remotes too
+    for branch in ("main", "master"):
+        try:
+            subprocess.run(
+                ["git", "show-ref", "--verify", f"refs/remotes/origin/{branch}"],
+                cwd=cwd, check=True, capture_output=True,
+            )
+            return branch
+        except (subprocess.CalledProcessError, OSError):
+            continue
+    return "main"  # fallback
+
+
 POLL_INTERVAL = 5
 MAX_SPAWNS_PER_CYCLE = 2
 REJECTION_COOLDOWN = 60

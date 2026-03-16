@@ -117,7 +117,8 @@ def run_preflight(
     if err:
         errors.append(err)
 
-    base = task.base_branch or config.base_branch or "main"
+    from warchief.config import detect_default_branch
+    base = task.base_branch or config.base_branch or detect_default_branch(project_root)
     err = check_base_branch(project_root, base)
     if err:
         errors.append(err)

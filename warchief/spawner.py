@@ -128,7 +128,7 @@ def build_claude_command(
         f"Description: {task.description}\n"
         f"Labels: {labels_str}\n"
         f"Dependencies: {deps_str}\n"
-        f"Base branch: {task.base_branch or 'main'}\n"
+        f"Base branch: {task.base_branch or config.base_branch or 'main'}\n"
         f"\n## Asking Questions\n"
         f"If you are unsure how to proceed or need clarification from the user, ask a question:\n"
         f"  warchief agent-update --task-id {task.id} --status blocked --question \"Your question here\"\n"
@@ -292,7 +292,8 @@ def spawn_agent(
     worktree_config = registry.get_role(role).get("worktree", {})
     wt_type = worktree_config.get("type", "none")
     worktree_path: Path | None = None
-    base = task.base_branch or config.base_branch or "main"
+    from warchief.config import detect_default_branch
+    base = task.base_branch or config.base_branch or detect_default_branch(project_root)
 
     # Use shared group branch if task belongs to a group
     task_branch = get_task_branch(task)

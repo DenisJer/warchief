@@ -26,6 +26,17 @@ from warchief.worktree import remove_worktree
 
 log = logging.getLogger("warchief.watcher")
 
+# Cache detected default branch to avoid calling git on every tick
+_default_branch_cache: dict[str, str] = {}
+
+
+def _default_branch(project_root: Path) -> str:
+    key = str(project_root)
+    if key not in _default_branch_cache:
+        from warchief.config import detect_default_branch
+        _default_branch_cache[key] = detect_default_branch(project_root)
+    return _default_branch_cache[key]
+
 
 class Watcher:
     """Main orchestration loop.
@@ -601,7 +612,7 @@ class Watcher:
 
     def _get_changed_files(self, task: TaskRecord) -> list[str]:
         """Get list of files changed on the task's feature branch."""
-        base = task.base_branch or self.config.base_branch or "main"
+        base = task.base_branch or self.config.base_branch or _default_branch(self.project_root)
         branch = get_task_branch(task)
         try:
             result = subprocess.run(
@@ -1350,7 +1361,7 @@ class Watcher:
 
     def _branch_has_commits(self, task: TaskRecord) -> bool:
         """Check if the feature branch has commits beyond the base."""
-        base = task.base_branch or self.config.base_branch or "main"
+        base = task.base_branch or self.config.base_branch or _default_branch(self.project_root)
         branch = get_task_branch(task)
         try:
             result = subprocess.run(
