@@ -7,7 +7,7 @@ set -e
 cd "$(dirname "$0")"
 
 # Read current version
-CURRENT=$(grep -oP 'version = "\K[^"]+' pyproject.toml)
+CURRENT=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
 IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
 
 case "${1}" in
