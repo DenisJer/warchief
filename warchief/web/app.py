@@ -122,11 +122,26 @@ def _build_state() -> dict:
     # MCP servers
     mcp_servers = get_mcp_servers()
 
+    # Check if watcher is running
+    watcher_lock = _project_root / ".warchief" / "watcher.lock"
+    watcher_running = False
+    watcher_pid = None
+    if watcher_lock.exists():
+        try:
+            watcher_pid = int(watcher_lock.read_text().strip())
+            import os
+            os.kill(watcher_pid, 0)  # Check if alive
+            watcher_running = True
+        except (ValueError, ProcessLookupError, PermissionError, OSError):
+            watcher_running = False
+
     return {
         "timestamp": now,
         "project": _project_root.name,
         "project_path": str(_project_root),
         "paused": config.paused,
+        "watcher_running": watcher_running,
+        "watcher_pid": watcher_pid if watcher_running else None,
         "metrics": {
             "total": metrics.total_tasks,
             "open": metrics.open_tasks,
@@ -552,6 +567,65 @@ async def get_messages(task_id: str):
         for m in msgs
         if m.message_type in ("question", "answer", "feedback")
     ]
+
+
+@app.post("/api/watcher/start")
+async def start_watcher():
+    """Start the watcher as a background process."""
+    import subprocess
+    import sys
+
+    lock_path = _project_root / ".warchief" / "watcher.lock"
+    if lock_path.exists():
+        try:
+            pid = int(lock_path.read_text().strip())
+            import os
+            os.kill(pid, 0)
+            return {"error": "Watcher already running", "pid": pid}
+        except (ValueError, ProcessLookupError, PermissionError, OSError):
+            lock_path.unlink(missing_ok=True)
+
+    python = sys.executable
+    proc = subprocess.Popen(
+        [python, "-m", "warchief", "watch"],
+        cwd=str(_project_root),
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return {"ok": True, "pid": proc.pid}
+
+
+@app.post("/api/watcher/stop")
+async def stop_watcher():
+    """Stop the running watcher."""
+    import os
+    import signal as sig
+
+    lock_path = _project_root / ".warchief" / "watcher.lock"
+    if not lock_path.exists():
+        return {"error": "Watcher not running"}
+    try:
+        pid = int(lock_path.read_text().strip())
+        os.kill(pid, sig.SIGTERM)
+        return {"ok": True, "pid": pid}
+    except (ValueError, ProcessLookupError, PermissionError) as e:
+        lock_path.unlink(missing_ok=True)
+        return {"error": f"Watcher not running: {e}"}
+
+
+@app.get("/api/watcher-log")
+async def get_watcher_log(lines: int = 100):
+    """Get the last N lines of the watcher log."""
+    log_path = _project_root / ".warchief" / "warchief.log"
+    if not log_path.exists():
+        return {"lines": [], "exists": False}
+    try:
+        content = log_path.read_text()
+        all_lines = content.strip().split("\n")
+        return {"lines": all_lines[-lines:], "exists": True, "total": len(all_lines)}
+    except OSError:
+        return {"lines": [], "exists": False}
 
 
 @app.get("/api/scratchpad/{task_id}")

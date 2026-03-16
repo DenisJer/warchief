@@ -346,6 +346,7 @@
   </div>
   <div class="stats">
     <button class="btn btn-primary" onclick="openCreateModal()" style="margin-right:8px;padding:4px 12px">+ New Task</button>
+    <button class="btn" id="watcherBtn" onclick="toggleWatcher()" style="margin-right:8px;padding:4px 12px" title="Start/stop the pipeline watcher">Loading...</button>
     <span><span class="conn-dot" id="connDot"></span><span id="connText">Connecting...</span></span>
     <span>Tasks: <span class="val" id="statTotal">0</span></span>
     <span>Active: <span class="val" id="statActive">0</span></span>
@@ -362,10 +363,17 @@
     <div class="pipeline-row" id="pipelineRow"></div>
   </div>
 
-  <!-- Left panel: events -->
+  <!-- Left panel: orchestrator log + events -->
   <div class="card" style="overflow:hidden;display:flex;flex-direction:column">
-    <div class="card-header">Events (last 10 min)</div>
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+      <span>Orchestrator Log</span>
+      <div style="display:flex;gap:4px">
+        <button class="btn" id="logTabEvents" onclick="switchLogTab('events')" style="font-size:10px;padding:2px 8px;border-color:#FFD100;color:#FFD100">Events</button>
+        <button class="btn" id="logTabWatcher" onclick="switchLogTab('watcher')" style="font-size:10px;padding:2px 8px">Watcher Log</button>
+      </div>
+    </div>
     <div class="card-body" id="eventsBody" style="flex:1;overflow-y:auto"></div>
+    <div class="card-body" id="watcherLogBody" style="flex:1;overflow-y:auto;display:none;font-family:'SF Mono','Fira Code','Consolas',monospace;font-size:11px;line-height:1.4;white-space:pre-wrap;background:#0a0a1a"></div>
   </div>
 
   <!-- Sidebar -->
@@ -535,6 +543,20 @@
   }
 
   function render(s) {
+    // Watcher status button
+    var wb = document.getElementById('watcherBtn');
+    if (s.watcher_running) {
+      wb.textContent = 'Stop Pipeline';
+      wb.style.borderColor = '#82e0aa';
+      wb.style.color = '#82e0aa';
+      wb.title = 'Pipeline is running (PID ' + (s.watcher_pid || '?') + ') — click to stop';
+    } else {
+      wb.textContent = 'Start Pipeline';
+      wb.style.borderColor = '#f0b27a';
+      wb.style.color = '#f0b27a';
+      wb.title = 'Pipeline is stopped — click to start processing tasks';
+    }
+
     // Project name + header stats
     if (s.project) {
       document.getElementById('projectName').textContent = s.project;
@@ -895,6 +917,64 @@
   document.getElementById('createTitle').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') submitCreate();
   });
+
+  // Watcher start/stop
+  async function toggleWatcher() {
+    var btn = document.getElementById('watcherBtn');
+    var isRunning = btn.textContent.indexOf('Stop') >= 0;
+    btn.textContent = '...';
+    btn.disabled = true;
+    try {
+      if (isRunning) {
+        var r = await apiPost('/api/watcher/stop');
+        if (r.error) window.alert(r.error);
+      } else {
+        var r = await apiPost('/api/watcher/start');
+        if (r.error) window.alert(r.error);
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // Log tab switching
+  let activeLogTab = 'events';
+
+  function switchLogTab(tab) {
+    activeLogTab = tab;
+    document.getElementById('eventsBody').style.display = tab === 'events' ? '' : 'none';
+    document.getElementById('watcherLogBody').style.display = tab === 'watcher' ? '' : 'none';
+    document.getElementById('logTabEvents').style.borderColor = tab === 'events' ? '#FFD100' : '#444';
+    document.getElementById('logTabEvents').style.color = tab === 'events' ? '#FFD100' : '#ccc';
+    document.getElementById('logTabWatcher').style.borderColor = tab === 'watcher' ? '#FFD100' : '#444';
+    document.getElementById('logTabWatcher').style.color = tab === 'watcher' ? '#FFD100' : '#ccc';
+    if (tab === 'watcher') loadWatcherLog();
+  }
+
+  async function loadWatcherLog() {
+    try {
+      var resp = await fetch('/api/watcher-log?lines=150');
+      var data = await resp.json();
+      var el = document.getElementById('watcherLogBody');
+      if (!data.exists || !data.lines.length) {
+        el.innerHTML = '<span style="color:#555">No watcher log yet — start the pipeline with: warchief start</span>';
+        return;
+      }
+      el.innerHTML = data.lines.map(function(line) {
+        var color = '#888';
+        if (/\[ERROR\]/.test(line)) color = '#f1948a';
+        else if (/\[WARNING\]/.test(line)) color = '#f0b27a';
+        else if (/Spawned|Released/.test(line)) color = '#82e0aa';
+        else if (/EMIT/.test(line)) color = '#85c1e9';
+        else if (/Budget|BUDGET/.test(line)) color = '#FFD100';
+        return '<span style="color:' + color + '">' + esc(line) + '</span>';
+      }).join('\n');
+      el.scrollTop = el.scrollHeight;
+    } catch(e) { console.error('Failed to load watcher log', e); }
+  }
+
+  // Auto-refresh watcher log if tab is active
+  setInterval(function() { if (activeLogTab === 'watcher') loadWatcherLog(); }, 5000);
 
   // Q&A modal
   let qaTaskId = null;

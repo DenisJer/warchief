@@ -99,7 +99,7 @@ def _message_record(**kwargs):
     return MessageRecord(**kwargs)
 
 
-_GITIGNORE_ENTRIES = [".warchief", ".warchief-worktrees", ".claude", "debug/"]
+_GITIGNORE_ENTRIES = [".warchief/", ".warchief-worktrees/", ".claude/", "debug/"]
 
 
 def _ensure_gitignore(project_root: Path) -> None:
@@ -110,17 +110,22 @@ def _ensure_gitignore(project_root: Path) -> None:
     if gitignore.exists():
         existing_lines = gitignore.read_text().splitlines()
 
-    existing_set = set(existing_lines)
-    missing = [e for e in _GITIGNORE_ENTRIES if e not in existing_set]
+    # Normalize: check with and without trailing slash
+    existing_normalized = set()
+    for line in existing_lines:
+        stripped = line.strip()
+        existing_normalized.add(stripped)
+        existing_normalized.add(stripped.rstrip("/"))
+        existing_normalized.add(stripped.rstrip("/") + "/")
+
+    missing = [e for e in _GITIGNORE_ENTRIES if e not in existing_normalized]
     if not missing:
         return
 
     with open(gitignore, "a") as f:
-        # Add a newline separator if file exists and doesn't end with one
         if existing_lines and existing_lines[-1] != "":
             f.write("\n")
-        if existing_lines:
-            f.write("# Warchief / tool artifacts\n")
+        f.write("# Warchief / tool artifacts\n")
         for entry in missing:
             f.write(entry + "\n")
 
@@ -148,11 +153,17 @@ def cmd_init(_args: argparse.Namespace) -> None:
     store.close()
 
     # Ensure .gitignore has warchief/tool entries
+    gitignore = Path.cwd() / ".gitignore"
+    had_gitignore = gitignore.exists()
     _ensure_gitignore(Path.cwd())
 
     print(f"Warchief initialized in {root}")
     print(f"  Database : {_db_path()}")
     print(f"  Config   : {cfg}")
+    if not had_gitignore:
+        print(f"  Gitignore: {gitignore} (created)")
+    else:
+        print(f"  Gitignore: {gitignore} (updated)")
 
 
 def cmd_create(args: argparse.Namespace) -> None:
