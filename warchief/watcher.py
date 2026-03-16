@@ -1237,25 +1237,42 @@ class Watcher:
             self.store.update_task(task.id, assigned_agent=None)
             self._emit(f"Cleared stale agent from task {task.id}")
 
-        # Cleanup orphaned worktrees (no matching alive agent)
-        # BUT preserve worktrees with saved sessions (needed for resume)
+        # Cleanup orphaned worktrees — ONLY if agent process is truly dead
+        # Must check PID, not just DB status, to avoid killing active agents
+        # after watcher restart (new watcher doesn't track old agents' procs)
         from warchief.worktree import list_worktrees
         worktree_ids = set(list_worktrees(self.project_root))
         if worktree_ids:
-            alive_ids = {a.id for a in self.store.get_running_agents() if a.status == "alive"}
-            # Find worktrees with saved sessions — don't clean these
+            # Build set of worktrees we must NOT touch
+            keep_worktrees: set[str] = set()
+
+            # Keep worktrees for agents that are alive in DB
+            for a in self.store.get_running_agents():
+                if a.status == "alive":
+                    keep_worktrees.add(a.id)
+
+            # Keep worktrees for agents whose PID is still running
+            # (catches agents from previous watcher session)
+            all_agents_rows = self.store._conn.execute(
+                "SELECT id, pid FROM agents WHERE pid IS NOT NULL"
+            ).fetchall()
+            for agent_id, pid in all_agents_rows:
+                if pid and _is_process_alive(pid):
+                    keep_worktrees.add(agent_id)
+
+            # Keep worktrees with saved sessions (for resume)
             sessions_dir = self.project_root / ".warchief" / "sessions"
-            session_worktrees: set[str] = set()
             if sessions_dir.exists():
                 for sf in sessions_dir.glob("*.session"):
                     try:
                         sd = json.loads(sf.read_text())
                         wt_agent = sd.get("agent_id", "")
                         if wt_agent:
-                            session_worktrees.add(wt_agent)
+                            keep_worktrees.add(wt_agent)
                     except (json.JSONDecodeError, OSError):
                         pass
-            orphaned_wt = worktree_ids - alive_ids - session_worktrees
+
+            orphaned_wt = worktree_ids - keep_worktrees
             for wt_id in orphaned_wt:
                 remove_worktree(self.project_root, wt_id)
                 self._emit(f"Cleaned up orphaned worktree: {wt_id}")
