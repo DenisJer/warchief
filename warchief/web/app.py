@@ -772,6 +772,70 @@ async def agents_page():
     return HTMLResponse(content=agents_path.read_text(), status_code=200)
 
 
+@app.get("/tasks", response_class=HTMLResponse)
+async def tasks_page():
+    tasks_path = _static_dir / "tasks.html"
+    return HTMLResponse(content=tasks_path.read_text(), status_code=200)
+
+
+@app.get("/api/tasks")
+async def list_all_tasks():
+    """Get all tasks with full details for the tasks page."""
+    store = _store()
+    tasks = store.list_tasks()
+    now = time.time()
+    result = []
+    for t in tasks:
+        events = store.get_events(task_id=t.id, limit=20)
+        messages = store.get_task_messages(t.id, limit=10)
+        scratchpad_text = read_scratchpad(_project_root, t.id)
+
+        event_list = []
+        for e in reversed(events):  # oldest first
+            d = e.details or {}
+            event_list.append({
+                "type": e.event_type,
+                "agent": e.agent_id or "",
+                "from_stage": d.get("from_stage", ""),
+                "to_stage": d.get("to_stage", ""),
+                "reason": d.get("failure_reason", ""),
+                "comment": d.get("comment", ""),
+                "age": format_duration(now - e.created_at) if e.created_at else "",
+            })
+
+        msg_list = []
+        for m in messages:
+            msg_list.append({
+                "type": m.message_type or "",
+                "body": m.body[:500] if m.body else "",
+                "from": m.from_agent or "",
+            })
+
+        from warchief.cost_tracker import get_task_cost
+        cost = get_task_cost(_project_root, t.id)
+
+        result.append({
+            "id": t.id,
+            "title": t.title,
+            "description": t.description[:300] if t.description else "",
+            "type": t.type,
+            "status": t.status,
+            "stage": t.stage or "",
+            "priority": t.priority,
+            "labels": t.labels,
+            "budget": t.budget,
+            "cost": round(cost, 4),
+            "rejections": t.rejection_count,
+            "spawns": t.spawn_count,
+            "crashes": t.crash_count,
+            "scratchpad": scratchpad_text[:1000] if scratchpad_text else "",
+            "events": event_list,
+            "messages": msg_list,
+            "created": format_duration(now - t.created_at) if t.created_at else "",
+        })
+    return result
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
