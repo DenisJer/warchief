@@ -98,6 +98,7 @@ def _row_to_task(row: sqlite3.Row) -> TaskRecord:
         priority=row["priority"],
         type=row["type"],
         extra_tools=json.loads(row["extra_tools"]) if "extra_tools" in row.keys() and row["extra_tools"] else [],
+        budget=float(row["budget"]) if "budget" in row.keys() and row["budget"] else 0.0,
         group_id=row["group_id"] if "group_id" in row.keys() else None,
         created_at=row["created_at"] or 0.0,
         updated_at=row["updated_at"] or 0.0,
@@ -169,6 +170,9 @@ class TaskStore:
         if "extra_tools" not in cols:
             self._conn.execute("ALTER TABLE tasks ADD COLUMN extra_tools TEXT DEFAULT '[]'")
             self._conn.commit()
+        if "budget" not in cols:
+            self._conn.execute("ALTER TABLE tasks ADD COLUMN budget REAL DEFAULT 0.0")
+            self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
@@ -188,16 +192,16 @@ class TaskStore:
             """INSERT INTO tasks
                (id, title, description, status, stage, labels, deps,
                 assigned_agent, base_branch, rejection_count, spawn_count,
-                crash_count, priority, type, extra_tools, group_id,
+                crash_count, priority, type, extra_tools, budget, group_id,
                 created_at, updated_at, version)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
             (
                 task_id, task.title, task.description, task.status, task.stage,
                 json.dumps(task.labels), json.dumps(task.deps),
                 task.assigned_agent, task.base_branch,
                 task.rejection_count, task.spawn_count, task.crash_count,
                 task.priority, task.type, json.dumps(task.extra_tools),
-                task.group_id, now, now,
+                task.budget, task.group_id, now, now,
             ),
         )
         self._conn.commit()

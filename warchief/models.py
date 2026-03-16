@@ -20,6 +20,7 @@ class TaskRecord:
     priority: int = 0
     type: str = "feature"
     extra_tools: list[str] = field(default_factory=list)
+    budget: float = 0.0  # 0 = use config default. Per-task budget in USD
     group_id: str | None = None
     created_at: float = 0.0
     updated_at: float = 0.0

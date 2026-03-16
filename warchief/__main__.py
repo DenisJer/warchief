@@ -188,6 +188,7 @@ def cmd_create(args: argparse.Namespace) -> None:
         priority=args.priority,
         type=args.type,
         extra_tools=tools_list,
+        budget=args.budget,
         created_at=now,
         updated_at=now,
         closed_at=None,
@@ -234,6 +235,8 @@ def _print_task_detail(task) -> None:
     print(f"Agent:       {agent}")
     tools = ", ".join(task.extra_tools) if task.extra_tools else "\u2014"
     print(f"Extra Tools: {tools}")
+    budget_str = f"${task.budget:.2f}" if task.budget > 0 else "default"
+    print(f"Budget:      {budget_str}")
     print(f"Branch:      {task.base_branch or chr(0x2014)}")
     print(f"Rejections:  {task.rejection_count}")
     print(f"Spawns:      {task.spawn_count}")
@@ -1440,6 +1443,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_create.add_argument("--deps", default="", help="Comma-separated dependency task IDs")
     p_create.add_argument("--priority", type=int, default=5, help="Priority 1-10 (default: 5)")
     p_create.add_argument("--tools", default="", help="Extra tools for agents (comma-separated, e.g. 'mcp__figma-console__*,mcp__figma__*')")
+    p_create.add_argument("--budget", type=float, default=0.0, help="Cost budget in USD for this task (0 = use config default)")
 
     # show
     p_show = sub.add_parser("show", help="Show task details")

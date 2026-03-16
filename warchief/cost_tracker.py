@@ -293,3 +293,15 @@ def check_budget(project_root: Path, budget_usd: float) -> tuple[bool, float]:
     summary = compute_cost_summary(project_root)
     remaining = budget_usd - summary.total_cost_usd
     return remaining > 0, remaining
+
+
+def get_task_cost(project_root: Path, task_id: str) -> float:
+    """Get total cost for a specific task."""
+    summary = compute_cost_summary(project_root)
+    return summary.by_task.get(task_id, 0.0)
+
+
+def get_session_cost(project_root: Path, session_start: float) -> float:
+    """Get total cost since a given timestamp."""
+    summary = compute_cost_summary(project_root)
+    return sum(e.cost_usd for e in summary.entries if e.timestamp >= session_start)

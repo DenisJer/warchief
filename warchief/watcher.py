@@ -21,7 +21,7 @@ from warchief.roles import RoleRegistry
 from warchief.spawner import spawn_agent
 from warchief.state_machine import dispatch_transition
 from warchief.task_store import TaskStore
-from warchief.cost_tracker import CostEntry, TokenUsage, append_cost_entry, estimate_cost
+from warchief.cost_tracker import CostEntry, TokenUsage, append_cost_entry, estimate_cost, get_task_cost, get_session_cost
 from warchief.worktree import remove_worktree
 
 log = logging.getLogger("warchief.watcher")
@@ -55,6 +55,8 @@ class Watcher:
         self._verbose = verbose
         self._last_status_line = ""
         self._spawn_backoff: dict[str, float] = {}  # task_id -> earliest_next_spawn timestamp
+        self._session_start: float = time.time()
+        self._budget_warned: bool = False  # session budget warning already logged
         # Track Popen objects for reliable exit code retrieval
         self._agent_procs: dict[str, subprocess.Popen] = {}  # agent_id -> claude Popen
         self._log_writer_procs: dict[str, subprocess.Popen] = {}  # agent_id -> log_writer Popen
@@ -173,6 +175,7 @@ class Watcher:
         self.cleanup_finished()
         self.check_zombies()
         self.reset_orphans()
+        self.check_budgets()
         self.process_transitions()
         self.spawn_ready()
         self.save_checkpoint()
@@ -1097,6 +1100,82 @@ class Watcher:
             self.store.update_task(task.id, stage=first_stage, labels=new_labels)
             self._emit(f"Released task {task.id} ({task.title}) into {first_stage}")
             log.info("Auto-released task %s into stage %s", task.id, first_stage)
+
+    # ── Budget Enforcement ──────────────────────────────────────
+
+    def check_budgets(self) -> None:
+        """Check session and per-task budgets. Runs every 6th tick (~30s)."""
+        if self._tick_count % 6 != 0:
+            return
+
+        budget_cfg = self.config.budget
+
+        # Session budget check
+        if budget_cfg.session_limit > 0:
+            session_cost = get_session_cost(self.project_root, self._session_start)
+            warn_threshold = budget_cfg.session_limit * budget_cfg.warn_at_percent / 100
+
+            if session_cost >= budget_cfg.session_limit:
+                log.warning(
+                    "SESSION BUDGET EXCEEDED: $%.2f / $%.2f — pausing pipeline",
+                    session_cost, budget_cfg.session_limit,
+                )
+                self._emit(
+                    f"Budget exceeded: ${session_cost:.2f} / ${budget_cfg.session_limit:.2f} — PAUSING"
+                )
+                self.config.paused = True
+                from warchief.config import write_config
+                write_config(self.project_root, self.config)
+                self.store.log_event(EventRecord(
+                    event_type="block",
+                    details={
+                        "failure_reason": f"Session budget exceeded: ${session_cost:.2f} / ${budget_cfg.session_limit:.2f}",
+                        "budget_type": "session",
+                    },
+                    actor="watcher",
+                ))
+                return
+
+            if session_cost >= warn_threshold and not self._budget_warned:
+                self._budget_warned = True
+                log.warning(
+                    "Session budget warning: $%.2f / $%.2f (%.0f%%)",
+                    session_cost, budget_cfg.session_limit,
+                    session_cost / budget_cfg.session_limit * 100,
+                )
+
+        # Per-task budget check
+        per_task_limit = budget_cfg.per_task_default
+        if per_task_limit <= 0:
+            return
+
+        tasks = self.store.list_tasks(status="in_progress")
+        tasks += self.store.list_tasks(status="open")
+        for task in tasks:
+            # Use task-specific budget if set, otherwise config default
+            limit = task.budget if task.budget > 0 else per_task_limit
+            task_cost = get_task_cost(self.project_root, task.id)
+            if task_cost >= limit and "budget-exceeded" not in task.labels:
+                log.warning(
+                    "Task %s budget exceeded: $%.2f / $%.2f — blocking",
+                    task.id, task_cost, limit,
+                )
+                self._emit(
+                    f"Task {task.id} budget exceeded: ${task_cost:.2f} / ${limit:.2f} — BLOCKED"
+                )
+                new_labels = list(task.labels) + ["budget-exceeded"]
+                self.store.update_task(
+                    task.id, status="blocked", labels=new_labels,
+                )
+                self.store.log_event(EventRecord(
+                    event_type="block",
+                    task_id=task.id,
+                    details={
+                        "failure_reason": f"Task budget exceeded: ${task_cost:.2f} / ${limit:.2f}",
+                        "budget_type": "per_task",
+                    },
+                    actor="watcher",
+                ))
 
     # ── Spawning ────────────────────────────────────────────────
 

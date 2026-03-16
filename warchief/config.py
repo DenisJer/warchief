@@ -61,6 +61,14 @@ class TestingConfig:
 
 
 @dataclass
+class BudgetConfig:
+    """Cost budget limits. Pipeline pauses or tasks block when exceeded."""
+    session_limit: float = 0.0      # 0 = no limit. Pauses entire pipeline
+    per_task_default: float = 0.0   # 0 = no limit. Default per-task budget
+    warn_at_percent: int = 80       # Log warning at this % of budget
+
+
+@dataclass
 class Config:
     max_total_agents: int = 8
     base_branch: str = ""
@@ -73,6 +81,7 @@ class Config:
     role_models: dict[str, str] = field(default_factory=dict)
     max_role_agents: dict[str, int] = field(default_factory=dict)
     testing: TestingConfig = field(default_factory=TestingConfig)
+    budget: BudgetConfig = field(default_factory=BudgetConfig)
 
 
 def _config_dir(project_root: Path) -> Path:
@@ -104,6 +113,13 @@ def read_config(project_root: Path) -> Config:
             e2e_command=t.get("e2e_command", ""),
             test_timeout=t.get("test_timeout", 300),
             auto_run=t.get("auto_run", True),
+        )
+    if "budget" in data and isinstance(data["budget"], dict):
+        b = data["budget"]
+        cfg.budget = BudgetConfig(
+            session_limit=float(b.get("session_limit", 0)),
+            per_task_default=float(b.get("per_task_default", 0)),
+            warn_at_percent=int(b.get("warn_at_percent", 80)),
         )
     return cfg
 
@@ -145,6 +161,13 @@ def write_config(project_root: Path, config: Config) -> None:
             lines.append(f'e2e_command = "{config.testing.e2e_command}"')
         lines.append(f'test_timeout = {config.testing.test_timeout}')
         lines.append(f'auto_run = {"true" if config.testing.auto_run else "false"}')
+
+    if config.budget.session_limit or config.budget.per_task_default:
+        lines.append("")
+        lines.append("[budget]")
+        lines.append(f'session_limit = {config.budget.session_limit}')
+        lines.append(f'per_task_default = {config.budget.per_task_default}')
+        lines.append(f'warn_at_percent = {config.budget.warn_at_percent}')
 
     content = "\n".join(lines) + "\n"
 
