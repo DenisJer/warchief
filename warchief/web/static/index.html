@@ -620,6 +620,7 @@
               var viewLabel = 'View Notes';
               if (t.labels && t.labels.indexOf('needs-plan-approval') >= 0) viewLabel = 'View Plan';
               else if (t.labels && t.labels.indexOf('needs-review') >= 0) viewLabel = 'View Findings';
+              else if (t.labels && t.labels.indexOf('triage-done') >= 0) viewLabel = 'View Diagnosis';
               actions += '<button class="btn" style="border-color:#FFD100;color:#FFD100;margin-top:4px;width:100%" onclick="viewScratchpad(\'' + esc(t.id) + '\')">' + viewLabel + '</button>';
             }
             actions += '<div class="task-actions">';
@@ -633,6 +634,12 @@
               actions += '<button class="btn" style="border-color:#82e0aa;color:#82e0aa" title="Accept findings and close investigation" onclick="doInvestAction(\'approve\',\'' + esc(t.id) + '\')">Accept</button>';
               actions += '<button class="btn" title="Ask investigator to dig deeper with your feedback" onclick="openModal(\'reject-investigation\',\'' + esc(t.id) + '\')">More Info</button>';
               actions += '<button class="btn" style="border-color:#FFD100;color:#FFD100" title="Create development tasks from findings" onclick="doInvestAction(\'escalate\',\'' + esc(t.id) + '\')">Escalate</button>';
+            }
+            // Triage action buttons
+            else if (t.labels && t.labels.indexOf('triage-done') >= 0) {
+              actions += '<button class="btn" style="border-color:#82e0aa;color:#82e0aa" title="Auto-retry using conductor diagnosis as guidance" onclick="retryWithDiagnosis(\'' + esc(t.id) + '\')">Retry with Diagnosis</button>';
+              actions += '<button class="btn" style="border-color:#85c1e9;color:#85c1e9" title="Split into smaller sub-tasks" onclick="openDecomposeModal(\'' + esc(t.id) + '\')">Decompose</button>';
+              actions += '<button class="btn btn-danger" title="Give up on this task" onclick="doAction(\'drop\',\'' + esc(t.id) + '\')">Drop</button>';
             }
             // Budget increase button
             if (t.labels && t.labels.indexOf('budget-exceeded') >= 0) {
@@ -993,6 +1000,26 @@
       return 'Agent\'s working directory was lost. ' +
         '<b>Retry</b> — this is usually a temporary issue.';
     return esc(reason);
+  }
+
+  // Retry with auto-diagnosis — no user input needed
+  async function retryWithDiagnosis(taskId) {
+    actionInProgress = true;
+    try {
+      // Fetch the diagnosis from scratchpad
+      var resp = await fetch('/api/scratchpad/' + encodeURIComponent(taskId));
+      var data = await resp.json();
+      var diagnosis = data.content || 'Retry based on conductor diagnosis';
+      // Extract just the last diagnosis entry
+      var diagIdx = diagnosis.lastIndexOf('DIAGNOSIS:');
+      if (diagIdx >= 0) diagnosis = diagnosis.substring(diagIdx);
+      if (diagnosis.length > 1024) diagnosis = diagnosis.substring(0, 1024);
+      var r = await apiPost('/api/retry/' + encodeURIComponent(taskId), {message: diagnosis});
+      if (r.error) window.alert('Error: ' + r.error);
+    } finally {
+      actionInProgress = false;
+      if (state) render(state);
+    }
   }
 
   // Budget increase
