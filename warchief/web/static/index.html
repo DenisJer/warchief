@@ -789,10 +789,22 @@
     actionInProgress = true;
     try {
       if (action === 'approve') {
-        var r = await apiPost('/api/approve-investigation/' + encodeURIComponent(taskId));
-        if (r.error) window.alert('Error: ' + r.error);
+        // Ask user if they want to just close or also create dev tasks
+        var choice = window.confirm(
+          'Investigation ' + taskId + ' findings reviewed.\n\n' +
+          'Click OK to close the investigation.\n' +
+          'Click Cancel to escalate (create development tasks from findings instead).'
+        );
+        if (choice) {
+          // Just close
+          var r = await apiPost('/api/approve-investigation/' + encodeURIComponent(taskId));
+          if (r.error) window.alert('Error: ' + r.error);
+        } else {
+          // Escalate
+          var r = await apiPost('/api/escalate/' + encodeURIComponent(taskId));
+          if (r.error) window.alert('Error: ' + r.error);
+        }
       } else if (action === 'escalate') {
-        if (!window.confirm('Escalate investigation ' + taskId + '?\nThis will create a new task to decompose findings into development tasks.')) return;
         var r = await apiPost('/api/escalate/' + encodeURIComponent(taskId));
         if (r.error) window.alert('Error: ' + r.error);
       }
