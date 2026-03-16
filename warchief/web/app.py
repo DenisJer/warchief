@@ -496,6 +496,63 @@ async def escalate_investigation(task_id: str):
         store.close()
 
 
+class DecomposeBody(BaseModel):
+    tasks: list[dict] = []
+
+
+@app.post("/api/decompose/{task_id}")
+async def decompose_task(task_id: str, body: DecomposeBody):
+    """Manually decompose a task into sub-tasks."""
+    from warchief.models import TaskRecord
+    import uuid
+
+    store = _store()
+    try:
+        task = store.get_task(task_id)
+        if not task:
+            return {"error": f"Task '{task_id}' not found"}
+
+        if not body.tasks:
+            return {"error": "No sub-tasks provided"}
+
+        now = time.time()
+        group_id = task.group_id or task.id
+        created_ids = []
+
+        for st in body.tasks:
+            if not st.get("title"):
+                continue
+            sub_id = f"wc-{uuid.uuid4().hex[:6]}"
+            record = TaskRecord(
+                id=sub_id,
+                title=st["title"],
+                description=st.get("description", ""),
+                status="open",
+                type=st.get("type", "feature"),
+                priority=st.get("priority", task.priority),
+                group_id=group_id,
+                budget=task.budget,
+                created_at=now,
+                updated_at=now,
+            )
+            store.create_task(record)
+            created_ids.append(sub_id)
+
+        if created_ids:
+            new_labels = list(task.labels)
+            if "decomposed" not in new_labels:
+                new_labels.append("decomposed")
+            store._conn.execute(
+                "UPDATE tasks SET status = 'blocked', labels = ?, group_id = ?, updated_at = ? WHERE id = ?",
+                (__import__("json").dumps(new_labels), group_id, now, task_id),
+            )
+            store._conn.commit()
+
+        return {"ok": True, "sub_tasks": created_ids}
+    finally:
+        store.close()
+
+
 @app.get("/api/agent-file")
 async def get_agent_file(path: str):
     """Read a file from an agent's worktree. Only serves files under .warchief-worktrees/."""

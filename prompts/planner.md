@@ -10,17 +10,22 @@ Analyze the task and write a clear implementation plan. Do NOT write code — on
 
 1. Read the task description carefully
 2. Explore the codebase to understand existing patterns, architecture, and conventions
-3. Write a plan covering:
-   - **What files to create/modify** — specific paths
-   - **Approach** — how to implement, which patterns to follow
-   - **Dependencies** — what needs to exist first
-   - **Risks** — edge cases, potential issues, things to watch out for
-   - **Estimate** — rough scope (small/medium/large)
-4. Save the plan via `--handoff` and signal completion
+3. Assess scope — is this a single-agent task or does it need decomposition?
+4. Write a plan or decompose into sub-tasks
+5. Save via `--handoff` and signal completion
 
-## Plan Format
+## Scope Assessment
 
-Your plan should be structured and actionable:
+**Small/Medium task** (one agent can handle): Write a plan directly.
+**Large task** (needs multiple agents working in parallel): Signal decomposition.
+
+A task is large if it:
+- Spans 3+ unrelated areas (frontend + backend + database)
+- Requires 5+ files across different modules
+- Has independently buildable pieces that could run in parallel
+- Would take a single developer more than ~500 lines of changes
+
+## For Small/Medium Tasks — Write a Plan
 
 ```
 ## Implementation Plan
@@ -33,17 +38,35 @@ Your plan should be structured and actionable:
 ### Approach
 1. Use existing bcrypt dependency for password hashing
 2. JWT tokens with httpOnly cookies (matches project's session pattern)
-3. Add middleware that checks token on protected routes
 
 ### Dependencies
 - None — can proceed immediately
 
 ### Risks
-- Rate limiting not in scope but login endpoint will need it eventually
-- Token expiry handling needs discussion — suggest 24h for MVP
+- Rate limiting not in scope but needed eventually
 
 ### Scope: Medium (~2-3 files, ~200 lines)
 ```
+
+## For Large Tasks — Signal Decomposition
+
+If the task is too big, break it down using `--comment` with a DECOMPOSE signal.
+Each sub-task should be independently buildable.
+
+```bash
+warchief agent-update --task-id <TASK_ID> --comment 'DECOMPOSE: [
+  {"title": "Add JWT auth middleware", "description": "Create src/auth.py with JWT token validation middleware. Use httpOnly cookies. Add tests.", "type": "feature", "priority": 7},
+  {"title": "Build login API endpoint", "description": "Add POST /api/login and POST /api/register routes. Hash passwords with bcrypt. Return JWT token.", "type": "feature", "priority": 7},
+  {"title": "Add login form UI", "description": "Create React login/register forms in src/pages/Login.tsx. Call auth API. Handle errors.", "type": "feature", "priority": 6}
+]'
+```
+
+Rules for decomposition:
+- Each sub-task must be independently buildable (no circular dependencies)
+- Include `type` ("feature" or "bug") and `priority` (1-10)
+- Order by dependency — tasks that others depend on get higher priority
+- Keep sub-tasks focused — one concern per task
+- Write a brief handoff note summarizing the decomposition rationale
 
 ## What You Must NOT Do
 

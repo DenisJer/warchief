@@ -418,6 +418,79 @@ class Watcher:
         self.store.create_message(msg)
         log.info("Stored %s message from %s for task %s", msg_type, agent.id, task.id)
 
+    def _check_decompose(self, task: TaskRecord, agent: AgentRecord) -> None:
+        """Check if the planner signaled decomposition via DECOMPOSE: comment."""
+        events = self.store.get_events(task_id=task.id, limit=10)
+        for ev in events:
+            if ev.event_type != "comment" or ev.agent_id != agent.id:
+                continue
+            comment = (ev.details or {}).get("comment", "")
+            if not comment.startswith("DECOMPOSE:"):
+                continue
+
+            json_str = comment[len("DECOMPOSE:"):].strip()
+            try:
+                sub_tasks = __import__("json").loads(json_str)
+            except (ValueError, TypeError):
+                log.warning("Invalid DECOMPOSE JSON from %s: %s", agent.id, json_str[:200])
+                continue
+
+            if not isinstance(sub_tasks, list) or not sub_tasks:
+                continue
+
+            self._create_sub_tasks(task, sub_tasks)
+            return
+
+    def _create_sub_tasks(self, parent: TaskRecord, sub_tasks: list[dict]) -> None:
+        """Create sub-tasks from a decomposition signal and block the parent."""
+        import uuid
+        now = time.time()
+        group_id = parent.group_id or parent.id
+        created_ids = []
+
+        for st in sub_tasks:
+            if not st.get("title"):
+                continue
+            task_id = f"wc-{uuid.uuid4().hex[:6]}"
+            record = TaskRecord(
+                id=task_id,
+                title=st["title"],
+                description=st.get("description", ""),
+                status="open",
+                type=st.get("type", "feature"),
+                priority=st.get("priority", parent.priority),
+                group_id=group_id,
+                budget=parent.budget,
+                created_at=now,
+                updated_at=now,
+            )
+            self.store.create_task(record)
+            created_ids.append(task_id)
+            log.info("Created sub-task %s: %s (group %s)", task_id, st["title"], group_id)
+
+        if created_ids:
+            # Block parent with decomposed label
+            new_labels = list(parent.labels)
+            if "decomposed" not in new_labels:
+                new_labels.append("decomposed")
+            self.store.update_task(
+                parent.id, status="blocked", labels=new_labels,
+                group_id=group_id,
+            )
+            self.store.log_event(EventRecord(
+                event_type="decompose",
+                task_id=parent.id,
+                details={
+                    "sub_tasks": created_ids,
+                    "count": len(created_ids),
+                },
+                actor="watcher",
+            ))
+            self._emit(
+                f"Task {parent.id} decomposed into {len(created_ids)} sub-tasks: "
+                + ", ".join(created_ids)
+            )
+
     # ── Group PR gate ──────────────────────────────────────────
 
     def _check_group_pr_gate(self, task: TaskRecord) -> None:
@@ -854,6 +927,10 @@ class Watcher:
 
         # Store handoff/rejection messages for next agent's context
         self._store_handoff_or_rejection(task, agent, result)
+
+        # Check for auto-decomposition signal from planner
+        if task.stage == "planning" and agent.role == "planner":
+            self._check_decompose(task, agent)
 
         # Handle post-testing — if tester passed and there are frontend files,
         # optionally block for manual e2e Playwright testing

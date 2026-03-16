@@ -440,6 +440,25 @@
   </div>
 </div>
 
+<!-- Decompose Modal -->
+<div class="modal-overlay" id="decomposeOverlay">
+  <div class="modal" style="min-width:550px;max-height:80vh;overflow-y:auto">
+    <h3>Decompose Task — <span id="decomposeTaskId"></span></h3>
+    <p style="font-size:12px;color:#888;margin-bottom:12px">Break this task into smaller sub-tasks that can run in parallel.</p>
+    <div id="decomposeSubTasks">
+      <div class="decompose-item" data-idx="0">
+        <input type="text" class="decompose-title" placeholder="Sub-task title (required)" style="margin-bottom:4px" />
+        <textarea class="decompose-desc" placeholder="Description" style="width:100%;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:6px 8px;border-radius:4px;font-size:12px;min-height:40px;resize:vertical;font-family:inherit;margin-bottom:8px"></textarea>
+      </div>
+    </div>
+    <button class="btn" onclick="addDecomposeItem()" style="margin-bottom:12px">+ Add sub-task</button>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeDecomposeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitDecompose()">Create Sub-tasks</button>
+    </div>
+  </div>
+</div>
+
 <script>
   let ws = null;
   let state = null;
@@ -519,6 +538,10 @@
               actions += '<button class="btn" style="border-color:#82e0aa;color:#82e0aa" onclick="doInvestAction(\'approve\',\'' + esc(t.id) + '\')">Accept</button>';
               actions += '<button class="btn" onclick="openModal(\'reject-investigation\',\'' + esc(t.id) + '\')">More Info</button>';
               actions += '<button class="btn" style="border-color:#FFD100;color:#FFD100" onclick="doInvestAction(\'escalate\',\'' + esc(t.id) + '\')">Escalate</button>';
+            }
+            // Decompose button (for planning stage or any non-decomposed task)
+            if (!(t.labels && t.labels.indexOf('decomposed') >= 0)) {
+              actions += '<button class="btn" style="border-color:#85c1e9;color:#85c1e9" onclick="openDecomposeModal(\'' + esc(t.id) + '\')">Decompose</button>';
             }
             // Default actions
             actions += '<button class="btn btn-danger" onclick="doAction(\'drop\',\'' + esc(t.id) + '\')">drop</button>';
@@ -819,6 +842,54 @@
   document.getElementById('createTitle').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') submitCreate();
   });
+
+  // Decompose modal
+  let decomposeTaskId = null;
+  let decomposeCount = 1;
+
+  function openDecomposeModal(taskId) {
+    decomposeTaskId = taskId;
+    decomposeCount = 1;
+    actionInProgress = true;
+    document.getElementById('decomposeTaskId').textContent = taskId;
+    document.getElementById('decomposeSubTasks').innerHTML =
+      '<div class="decompose-item" data-idx="0">' +
+      '<input type="text" class="decompose-title" placeholder="Sub-task 1 title (required)" style="margin-bottom:4px" />' +
+      '<textarea class="decompose-desc" placeholder="Description" style="width:100%;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:6px 8px;border-radius:4px;font-size:12px;min-height:40px;resize:vertical;font-family:inherit;margin-bottom:8px"></textarea></div>';
+    document.getElementById('decomposeOverlay').classList.add('active');
+    setTimeout(function() { document.querySelector('.decompose-title').focus(); }, 100);
+  }
+
+  function addDecomposeItem() {
+    decomposeCount++;
+    var html = '<div class="decompose-item" data-idx="' + (decomposeCount-1) + '">' +
+      '<input type="text" class="decompose-title" placeholder="Sub-task ' + decomposeCount + ' title (required)" style="margin-bottom:4px" />' +
+      '<textarea class="decompose-desc" placeholder="Description" style="width:100%;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:6px 8px;border-radius:4px;font-size:12px;min-height:40px;resize:vertical;font-family:inherit;margin-bottom:8px"></textarea></div>';
+    document.getElementById('decomposeSubTasks').insertAdjacentHTML('beforeend', html);
+    var titles = document.querySelectorAll('.decompose-title');
+    titles[titles.length - 1].focus();
+  }
+
+  function closeDecomposeModal() {
+    document.getElementById('decomposeOverlay').classList.remove('active');
+    decomposeTaskId = null;
+    actionInProgress = false;
+    if (state) render(state);
+  }
+
+  async function submitDecompose() {
+    var titles = document.querySelectorAll('.decompose-title');
+    var descs = document.querySelectorAll('.decompose-desc');
+    var tasks = [];
+    for (var i = 0; i < titles.length; i++) {
+      var t = titles[i].value.trim();
+      if (t) tasks.push({title: t, description: descs[i].value.trim(), type: 'feature'});
+    }
+    if (!tasks.length) { window.alert('Add at least one sub-task'); return; }
+    var r = await apiPost('/api/decompose/' + encodeURIComponent(decomposeTaskId), {tasks: tasks});
+    if (r.error) { window.alert('Error: ' + r.error); return; }
+    closeDecomposeModal();
+  }
 
   // Start
   connect();
