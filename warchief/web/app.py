@@ -452,14 +452,20 @@ async def get_agent_log(agent_id: str, lines: int = 200):
 
 @app.post("/api/approve-plan/{task_id}")
 async def approve_plan(task_id: str):
-    """Approve a plan — task advances from planning to development."""
+    """Approve a plan — advance task directly from planning to development."""
+    from warchief.state_machine import get_next_stage
     store = _store()
     task = store.get_task(task_id)
     if not task:
         return {"error": f"Task '{task_id}' not found"}
-    new_labels = [l for l in task.labels if l != "needs-plan-approval"] + ["plan-approved"]
-    store.update_task(task_id, status="open", labels=new_labels)
-    return {"ok": True}
+    next_stage = get_next_stage("planning", task.labels, task.type)
+    if not next_stage:
+        next_stage = "development"
+    new_labels = [l for l in task.labels
+                  if l not in ("needs-plan-approval", "plan-approved", f"stage:{task.stage}")]
+    new_labels.append(f"stage:{next_stage}")
+    store.update_task(task_id, status="open", stage=next_stage, labels=new_labels)
+    return {"ok": True, "next_stage": next_stage}
 
 
 @app.post("/api/reject-plan/{task_id}")
