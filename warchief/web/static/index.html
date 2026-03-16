@@ -596,6 +596,8 @@
           else if (t.labels.indexOf('budget-exceeded') >= 0) blockedReason = 'Budget limit exceeded — approve more or drop';
           else if (t.labels.indexOf('decomposed') >= 0) blockedReason = 'Decomposed into sub-tasks';
           else if (t.labels.indexOf('needs-testing') >= 0) blockedReason = 'Waiting for manual test approval';
+          else if (t.labels.indexOf('needs-triage') >= 0) blockedReason = 'Conductor is analyzing why this failed...';
+          else if (t.labels.indexOf('triage-done') >= 0) blockedReason = 'Diagnosis ready — review findings and decide next steps';
           else blockedReason = friendlyBlockReason(t.block_reason) || 'Blocked — check agent logs for details';
         }
         return '<div class="task-card">' +

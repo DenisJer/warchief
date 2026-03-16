@@ -298,7 +298,7 @@ class TestAutoRecoverBlocked:
         assert task.spawn_count == 0
         assert task.stage == "development"
 
-    def test_stops_after_max_auto_retries(self, watcher, store):
+    def test_spawns_triage_after_max_auto_retries(self, watcher, store):
         store.create_task(TaskRecord(
             id="wc-stuck", title="Stuck task", status="blocked",
             stage="pr-creation", labels=["stage:pr-creation", "rejected"],
@@ -317,7 +317,8 @@ class TestAutoRecoverBlocked:
         watcher._auto_recover_blocked()
 
         task = store.get_task("wc-stuck")
-        assert task.status == "blocked"  # NOT recovered — exhausted retries
+        # Task gets needs-triage label — conductor investigates
+        assert "needs-triage" in task.labels
 
     def test_unknown_failure_not_recovered(self, watcher, store):
         store.create_task(TaskRecord(

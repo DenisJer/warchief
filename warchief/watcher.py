@@ -258,11 +258,13 @@ class Watcher:
             )
 
             if auto_unblock_count >= MAX_AUTO_RETRIES:
-                # Already retried enough — require manual intervention
-                if self._tick_count % 12 == 0:
+                # Already retried enough — spawn conductor to diagnose
+                if "needs-triage" not in task.labels and "triage-done" not in task.labels:
+                    self._spawn_triage(task)
+                elif self._tick_count % 12 == 0:
                     self._emit(
-                        f"ATTENTION: Task {task.id} ({task.title[:40]}) "
-                        f"BLOCKED after {auto_unblock_count} auto-retries — needs manual review"
+                        f"Task {task.id} ({task.title[:40]}) "
+                        f"BLOCKED — waiting for user decision"
                     )
                 continue
 
@@ -650,6 +652,87 @@ class Watcher:
 
     # ── Question announcements ─────────────────────────────────
 
+    def _spawn_triage(self, task: TaskRecord) -> None:
+        """Spawn a conductor to diagnose why a task is blocked.
+
+        The conductor reads scratchpad, events, and agent logs, then writes
+        a diagnosis with recommended actions. Task gets 'needs-triage' label.
+        """
+        from warchief.scratchpad import read_scratchpad, append_scratchpad
+
+        # Gather context for the conductor
+        events = self.store.get_events(task_id=task.id, limit=20)
+        block_reasons = []
+        for e in events:
+            if e.event_type == "block" and e.details:
+                reason = e.details.get("failure_reason", "")
+                if reason:
+                    block_reasons.append(reason)
+
+        scratchpad = read_scratchpad(self.project_root, task.id)
+
+        # Get last agent's log snippet
+        last_log = ""
+        agent_logs_dir = self.project_root / ".warchief" / "agent-logs"
+        for e in events:
+            if e.event_type == "spawn" and e.agent_id:
+                log_path = agent_logs_dir / f"{e.agent_id}.log"
+                if log_path.exists():
+                    try:
+                        content = log_path.read_text()
+                        lines = content.strip().split("\n")
+                        last_log = "\n".join(lines[-20:])
+                    except OSError:
+                        pass
+                break
+
+        # Build diagnosis context
+        diagnosis_prompt = (
+            f"## Task Triage: {task.id}\n"
+            f"Title: {task.title}\n"
+            f"Description: {task.description}\n"
+            f"Stage: {task.stage}\n"
+            f"Rejections: {task.rejection_count}, Spawns: {task.spawn_count}, Crashes: {task.crash_count}\n\n"
+            f"## Block Reasons\n" + "\n".join(f"- {r}" for r in block_reasons) + "\n\n"
+        )
+        if scratchpad:
+            diagnosis_prompt += f"## Agent Handoff Notes\n{scratchpad[:1000]}\n\n"
+        if last_log:
+            diagnosis_prompt += f"## Last Agent Log (tail)\n```\n{last_log[:1000]}\n```\n\n"
+
+        diagnosis_prompt += (
+            "## Your Task\n"
+            "Analyze why this task failed and write a diagnosis:\n"
+            "1. What went wrong (root cause)\n"
+            "2. Recommended action: RETRY (with specific guidance), DECOMPOSE (too big), or DROP (impossible)\n"
+            "3. If RETRY: what specific instructions should the developer follow\n"
+            "4. If DECOMPOSE: suggest sub-tasks\n\n"
+            "Write your diagnosis as a handoff note:\n"
+            f"  warchief agent-update --task-id {task.id} --handoff 'DIAGNOSIS: ...'\n"
+            f"  warchief agent-update --task-id {task.id} --status blocked\n"
+        )
+
+        # Mark as triaging so we don't spawn again
+        new_labels = list(task.labels)
+        if "needs-triage" not in new_labels:
+            new_labels.append("needs-triage")
+        self.store.update_task(task.id, labels=new_labels)
+
+        # Spawn the conductor as an investigator (read-only, no worktree)
+        agent = spawn_agent(
+            task, "investigator", self.project_root,
+            self.store, self.config, self.registry,
+        )
+        if agent:
+            self._emit(f"Conductor triaging blocked task {task.id}: {task.title[:40]}")
+            # Track proc
+            proc = getattr(agent, "_claude_proc", None)
+            if proc is not None:
+                self._agent_procs[agent.id] = proc
+            lw_proc = getattr(agent, "_log_writer_proc", None)
+            if lw_proc is not None:
+                self._log_writer_procs[agent.id] = lw_proc
+
     def _announce_question(self, task: TaskRecord) -> None:
         """Loudly announce a pending question so the user notices it.
 
@@ -808,7 +891,14 @@ class Watcher:
 
                 task = self.store.get_task(agent.current_task) if agent.current_task else None
                 if task:
-                    self._handle_agent_exit(task, agent, exit_code)
+                    # Check if this was a triage investigator
+                    if "needs-triage" in task.labels and agent.role == "investigator":
+                        new_labels = [l for l in task.labels if l != "needs-triage"]
+                        new_labels.append("triage-done")
+                        self.store.update_task(task.id, labels=new_labels, assigned_agent=None)
+                        self._emit(f"Triage complete for {task.id} — review diagnosis in dashboard")
+                    else:
+                        self._handle_agent_exit(task, agent, exit_code)
 
     def _handle_agent_exit(
         self, task: TaskRecord, agent: AgentRecord, exit_code: int | None,
