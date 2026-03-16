@@ -540,12 +540,9 @@ async def decompose_task(task_id: str, body: DecomposeBody):
         created_ids.append(sub_id)
 
     if created_ids:
-        new_labels = list(task.labels)
-        if "decomposed" not in new_labels:
-            new_labels.append("decomposed")
         store._conn.execute(
-            "UPDATE tasks SET status = 'blocked', labels = ?, group_id = ?, updated_at = ? WHERE id = ?",
-            (__import__("json").dumps(new_labels), group_id, now, task_id),
+            "UPDATE tasks SET status = 'closed', stage = NULL, labels = '[\"decomposed\"]', group_id = ?, updated_at = ? WHERE id = ?",
+            (group_id, now, task_id),
         )
         store._conn.commit()
 

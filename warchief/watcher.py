@@ -480,13 +480,10 @@ class Watcher:
             log.info("Created sub-task %s: %s (group %s)", task_id, st["title"], group_id)
 
         if created_ids:
-            # Block parent with decomposed label
-            new_labels = list(parent.labels)
-            if "decomposed" not in new_labels:
-                new_labels.append("decomposed")
+            # Close parent — sub-tasks carry the work now
             self.store.update_task(
-                parent.id, status="blocked", labels=new_labels,
-                group_id=group_id,
+                parent.id, status="closed", stage=None,
+                labels=["decomposed"], group_id=group_id,
             )
             self.store.log_event(EventRecord(
                 event_type="decompose",
