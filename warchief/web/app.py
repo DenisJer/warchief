@@ -669,6 +669,23 @@ async def stop_watcher():
         return {"error": f"Watcher not running: {e}"}
 
 
+@app.post("/api/increase-budget/{task_id}")
+async def increase_budget(task_id: str, body: ActionBody):
+    """Increase task budget and unblock it."""
+    store = _store()
+    task = store.get_task(task_id)
+    if not task:
+        return {"error": f"Task '{task_id}' not found"}
+    try:
+        amount = float(body.message) if body.message else 2.0
+    except ValueError:
+        amount = 2.0
+    new_budget = task.budget + amount
+    new_labels = [l for l in task.labels if l != "budget-exceeded"]
+    store.update_task(task_id, status="open", budget=new_budget, labels=new_labels)
+    return {"ok": True, "new_budget": new_budget}
+
+
 @app.get("/api/watcher-log")
 async def get_watcher_log(lines: int = 100):
     """Get the last N lines of the watcher log."""

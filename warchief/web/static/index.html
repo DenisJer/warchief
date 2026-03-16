@@ -633,6 +633,11 @@
               actions += '<button class="btn" title="Ask investigator to dig deeper with your feedback" onclick="openModal(\'reject-investigation\',\'' + esc(t.id) + '\')">More Info</button>';
               actions += '<button class="btn" style="border-color:#FFD100;color:#FFD100" title="Create development tasks from findings" onclick="doInvestAction(\'escalate\',\'' + esc(t.id) + '\')">Escalate</button>';
             }
+            // Budget increase button
+            if (t.labels && t.labels.indexOf('budget-exceeded') >= 0) {
+              actions += '<button class="btn" style="border-color:#FFD100;color:#FFD100" title="Add $2 to budget and continue" onclick="increaseBudget(\'' + esc(t.id) + '\',2)">+$2</button>';
+              actions += '<button class="btn" style="border-color:#FFD100;color:#FFD100" title="Add $5 to budget and continue" onclick="increaseBudget(\'' + esc(t.id) + '\',5)">+$5</button>';
+            }
             // Retry button for blocked tasks (not plan-approval or review)
             if (t.status === 'blocked' && !(t.labels && (t.labels.indexOf('needs-plan-approval') >= 0 || t.labels.indexOf('needs-review') >= 0))) {
               actions += '<button class="btn" style="border-color:#82e0aa;color:#82e0aa" title="Retry — reopen task with feedback, reset counters" onclick="openModal(\'retry\',\'' + esc(t.id) + '\')">Retry</button>';
@@ -987,6 +992,12 @@
       return 'Agent\'s working directory was lost. ' +
         '<b>Retry</b> — this is usually a temporary issue.';
     return esc(reason);
+  }
+
+  // Budget increase
+  async function increaseBudget(taskId, amount) {
+    var r = await apiPost('/api/increase-budget/' + encodeURIComponent(taskId), {message: String(amount)});
+    if (r.error) window.alert('Error: ' + r.error);
   }
 
   // Watcher start/stop
