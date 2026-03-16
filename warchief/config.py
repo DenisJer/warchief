@@ -13,7 +13,7 @@ except ImportError:
 
 # --- Stage / Status Constants ---
 
-STAGES = ["planning", "development", "reviewing", "security-review", "testing", "pr-creation", "investigation"]
+STAGES = ["investigation", "planning", "development", "testing", "reviewing", "security-review", "pr-creation"]
 
 STAGE_TO_ROLE: dict[str, str] = {
     "planning": "planner",
