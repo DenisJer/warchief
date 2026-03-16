@@ -654,8 +654,7 @@
             // Default actions
             actions += '<button class="btn btn-danger" title="Kill agent, close task, clean up" onclick="doAction(\'drop\',\'' + esc(t.id) + '\')">drop</button>';
             actions += '<button class="btn" title="Grant MCP tools (e.g. Figma, Supabase)" onclick="openModal(\'grant\',\'' + esc(t.id) + '\')">grant</button>';
-            actions += '<button class="btn" title="Kill agent and restart with your message" onclick="openModal(\'nudge\',\'' + esc(t.id) + '\')">nudge</button>';
-            actions += '<button class="btn" title="Send message — next agent spawn will see it" onclick="openModal(\'tell\',\'' + esc(t.id) + '\')">tell</button>';
+            actions += '<button class="btn" style="border-color:#85c1e9;color:#85c1e9" title="Restart agent with your instructions (keeps context via session resume)" onclick="openModal(\'nudge\',\'' + esc(t.id) + '\')">message</button>';
             actions += '</div>';
             return actions;
           })() +
@@ -860,6 +859,7 @@
     document.getElementById('modalInput').value = '';
     var placeholder = 'Enter message...';
     if (action === 'grant') placeholder = 'e.g. figma console, supabase';
+    else if (action === 'nudge') placeholder = 'e.g. "Use npm test for testing", "The config file is in /app/jest.config.js"';
     else if (action === 'reject-plan') placeholder = 'What should the planner change?';
     else if (action === 'reject-investigation') placeholder = 'What else should be investigated?';
     else if (action === 'retry') placeholder = 'Give the agent specific guidance for the retry...';
