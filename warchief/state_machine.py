@@ -141,7 +141,7 @@ def dispatch_transition(
 
     # --- PR-CREATION stage ---
     if task_stage == "pr-creation":
-        return _handle_pr_creation(task_status, task_labels, stage_label)
+        return _handle_pr_creation(task_status, task_labels, stage_label, agent_role)
 
     # --- INVESTIGATION stage ---
     if task_stage == "investigation":
@@ -360,8 +360,10 @@ def _handle_pr_creation(
     task_status: str,
     task_labels: list[str],
     stage_label: str | None,
+    agent_role: str = "",
 ) -> TransitionResult:
-    if task_status in ("open", "closed"):
+    # Only close when PR creator has finished (not when reviewer advances here)
+    if task_status in ("open", "closed") and agent_role == "pr_creator":
         return TransitionResult(
             status="closed",
             remove_labels=[stage_label] if stage_label else [],

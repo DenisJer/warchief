@@ -401,13 +401,21 @@ class TestPrCreation:
         assert r.status == "closed"
         assert "stage:pr-creation" in r.remove_labels
 
-    def test_open_completes(self):
+    def test_pr_creator_completes(self):
         """PR creator finished (open) — task is done."""
         r = dispatch_transition(
             task_status="open", task_stage="pr-creation",
             task_labels=["stage:pr-creation"], agent_role="pr_creator",
         )
         assert r.status == "closed"
+
+    def test_non_pr_creator_does_not_close(self):
+        """Task just advanced to pr-creation by reviewer — should NOT close."""
+        r = dispatch_transition(
+            task_status="open", task_stage="pr-creation",
+            task_labels=["stage:pr-creation"], agent_role="reviewer",
+        )
+        assert r.status is None  # No change — wait for pr_creator to spawn
 
     def test_in_progress_noop(self):
         """Task still in progress — nothing to do (crash/exit handled above)."""
