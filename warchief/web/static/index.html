@@ -443,6 +443,21 @@
   </div>
 </div>
 
+<!-- Q&A Modal -->
+<div class="modal-overlay" id="qaOverlay">
+  <div class="modal" style="min-width:550px;max-width:700px;max-height:80vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3>Q&A — <span id="qaTaskId"></span></h3>
+      <button class="btn" onclick="closeQAModal()">Close</button>
+    </div>
+    <div id="qaMessages" style="flex:1;overflow-y:auto;margin-bottom:12px;min-height:100px"></div>
+    <div class="answer-row">
+      <input class="answer-input" id="qaInput" placeholder="Type your answer..." style="flex:1;padding:8px 12px;font-size:14px" />
+      <button class="btn btn-primary" style="padding:8px 16px" onclick="submitQA()">Send</button>
+    </div>
+  </div>
+</div>
+
 <!-- Scratchpad Viewer -->
 <div class="modal-overlay" id="scratchpadOverlay">
   <div class="modal" style="min-width:600px;max-width:800px;max-height:80vh;display:flex;flex-direction:column">
@@ -540,6 +555,8 @@
           (t.labels && t.labels.indexOf('budget-exceeded') >= 0 ? '<span class="status" style="background:#8C1616;color:#FFD100">$OVER</span>' : '') +
           '<span>' + esc(t.age) + '</span></div>' +
           (agentStr ? '<div style="margin-top:2px">' + agentStr + '</div>' : '') +
+          // Question indicator
+          (t.question ? '<button class="btn" style="border-color:#FFD100;color:#FFD100;margin-top:4px;width:100%" title="Agent has a pending question" onclick="openQAModal(\'' + esc(t.id) + '\')">❓ Answer Question</button>' : '') +
           (function() {
             var actions = '';
             // View Plan / View Findings button
@@ -708,9 +725,9 @@
   }
 
   async function doAnswer(taskId) {
-    const input = document.getElementById('ans-' + taskId);
+    var input = document.getElementById('ans-' + taskId);
     if (!input || !input.value.trim()) return;
-    const r = await apiPost('/api/answer/' + taskId, {message: input.value.trim()});
+    var r = await apiPost('/api/answer/' + taskId, {message: input.value.trim()});
     if (r.error) alert(r.error);
     else input.value = '';
   }
@@ -781,7 +798,7 @@
 
   // Escape key to close modals
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') { closeModal(); closeCreateModal(); closeScratchpad(); closeDecomposeModal(); }
+    if (e.key === 'Escape') { closeModal(); closeCreateModal(); closeScratchpad(); closeDecomposeModal(); closeQAModal(); }
   });
 
   // Label picker
@@ -859,6 +876,67 @@
   // Enter in create title submits
   document.getElementById('createTitle').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') submitCreate();
+  });
+
+  // Q&A modal
+  let qaTaskId = null;
+
+  async function openQAModal(taskId) {
+    qaTaskId = taskId;
+    actionInProgress = true;
+    document.getElementById('qaTaskId').textContent = taskId;
+    document.getElementById('qaInput').value = '';
+    document.getElementById('qaMessages').innerHTML = '<div style="color:#555;text-align:center;padding:12px">Loading...</div>';
+    document.getElementById('qaOverlay').classList.add('active');
+    await refreshQAMessages();
+    setTimeout(function() { document.getElementById('qaInput').focus(); }, 100);
+  }
+
+  async function refreshQAMessages() {
+    if (!qaTaskId) return;
+    try {
+      var resp = await fetch('/api/messages/' + encodeURIComponent(qaTaskId));
+      var msgs = await resp.json();
+      var el = document.getElementById('qaMessages');
+      if (!msgs.length) {
+        el.innerHTML = '<div style="color:#555;text-align:center;padding:12px">No messages yet</div>';
+        return;
+      }
+      el.innerHTML = msgs.map(function(m) {
+        var isUser = m.type === 'answer' || m.type === 'feedback';
+        var align = isUser ? 'flex-end' : 'flex-start';
+        var bg = isUser ? '#1a3a1a' : '#2a1a0a';
+        var border = isUser ? '#82e0aa' : '#FFD100';
+        var label = m.type === 'question' ? '❓ Agent' : (m.type === 'feedback' ? '💬 You (feedback)' : '✅ You');
+        return '<div style="display:flex;justify-content:' + align + ';margin-bottom:8px">' +
+          '<div style="max-width:85%;background:' + bg + ';border-left:3px solid ' + border + ';border-radius:0 6px 6px 0;padding:8px 12px">' +
+            '<div style="font-size:10px;color:' + border + ';font-weight:bold;margin-bottom:4px">' + label + '</div>' +
+            '<div style="font-size:13px;color:#e0e0e0;white-space:pre-wrap">' + esc(m.body) + '</div>' +
+          '</div></div>';
+      }).join('');
+      el.scrollTop = el.scrollHeight;
+    } catch(e) { console.error('Failed to load messages', e); }
+  }
+
+  async function submitQA() {
+    var input = document.getElementById('qaInput');
+    if (!input.value.trim() || !qaTaskId) return;
+    var r = await apiPost('/api/answer/' + encodeURIComponent(qaTaskId), {message: input.value.trim()});
+    if (r.error) { window.alert('Error: ' + r.error); return; }
+    input.value = '';
+    await refreshQAMessages();
+  }
+
+  function closeQAModal() {
+    document.getElementById('qaOverlay').classList.remove('active');
+    qaTaskId = null;
+    actionInProgress = false;
+    if (state) render(state);
+  }
+
+  document.getElementById('qaInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') submitQA();
+    if (e.key === 'Escape') closeQAModal();
   });
 
   // Scratchpad viewer

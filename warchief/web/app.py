@@ -67,6 +67,13 @@ def _build_state() -> dict:
                 agent = agent_map.get(t.id)
                 age = format_duration(now - t.updated_at) if t.updated_at else ""
                 scratchpad = read_scratchpad(_project_root, t.id)
+                # Get latest question if task has question label
+                question_text = ""
+                if "question" in t.labels:
+                    q_msgs = [m for m in store.get_task_messages(t.id, limit=5)
+                              if m.message_type == "question"]
+                    if q_msgs:
+                        question_text = q_msgs[-1].body
                 cards.append({
                     "id": t.id,
                     "title": t.title,
@@ -75,6 +82,7 @@ def _build_state() -> dict:
                     "age": age,
                     "labels": t.labels,
                     "scratchpad": scratchpad[:500] if scratchpad else "",
+                    "question": question_text,
                 })
             pipeline.append({"stage": stage, "tasks": cards, "count": len(cards)})
 
@@ -549,6 +557,26 @@ async def decompose_task(task_id: str, body: DecomposeBody):
             store._conn.commit()
 
         return {"ok": True, "sub_tasks": created_ids}
+    finally:
+        store.close()
+
+
+@app.get("/api/messages/{task_id}")
+async def get_messages(task_id: str):
+    """Get Q&A message history for a task."""
+    store = _store()
+    try:
+        msgs = store.get_task_messages(task_id)
+        return [
+            {
+                "type": m.message_type,
+                "body": m.body,
+                "from": m.from_agent or "",
+                "created_at": m.created_at,
+            }
+            for m in msgs
+            if m.message_type in ("question", "answer", "feedback")
+        ]
     finally:
         store.close()
 
