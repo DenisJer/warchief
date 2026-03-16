@@ -41,13 +41,21 @@ fi
 sed -i '' "s/version = \"$CURRENT\"/version = \"$NEW\"/" pyproject.toml
 echo "Version bumped in pyproject.toml"
 
+# Build Vue frontend
+echo "Building Vue frontend..."
+cd warchief/web/frontend
+npm install --silent
+npm run build || { echo "Frontend build failed — aborting"; cd ../../..; git checkout pyproject.toml; exit 1; }
+cd ../../..
+echo "Frontend built"
+
 # Run tests
 echo "Running tests..."
 source .venv/bin/activate
 pip install -e . -q
 python -m pytest tests/ -x -q || { echo "Tests failed — aborting"; git checkout pyproject.toml; exit 1; }
 
-# Build
+# Build Python package
 rm -rf dist/
 python -m build -q
 echo "Built dist/"
