@@ -62,33 +62,37 @@ class TestFullPipelineE2E:
             event_type="spawn", task_id=task_id, agent_id="developer-thrall",
         ))
 
-        # 4. Developer finishes — transition to reviewing
+        # 4. Developer finishes — transition to testing (testing before reviewing)
         result = dispatch_transition(
             task_status="closed", task_stage="development",
             task_labels=["stage:development"], agent_role="developer",
             branch_has_commits=True,
         )
-        assert result.next_stage == "reviewing"
+        assert result.next_stage == "testing"
         assert result.status == "open"
+
+        store.update_task(task_id,
+            stage="testing", status="open", assigned_agent=None,
+            labels=["stage:testing"],
+        )
+        store.update_agent("developer-thrall", status="retired", current_task=None)
+
+        # 5. Tester passes — transition to reviewing
+        result = dispatch_transition(
+            task_status="open", task_stage="testing",
+            task_labels=["stage:testing"], agent_role="tester",
+        )
+        assert result.next_stage == "reviewing"
 
         store.update_task(task_id,
             stage="reviewing", status="open", assigned_agent=None,
             labels=["stage:reviewing"],
         )
-        store.update_agent("developer-thrall", status="retired", current_task=None)
 
-        # 5. Reviewer approves — transition to testing
+        # 5b. Reviewer approves — transition to pr-creation
         result = dispatch_transition(
             task_status="closed", task_stage="reviewing",
             task_labels=["stage:reviewing"], agent_role="reviewer",
-        )
-        assert result.next_stage == "testing"
-
-        # 5b. Testing stage — simulate skip (no frontend files)
-        # needs-testing not present, so it advances to pr-creation
-        result = dispatch_transition(
-            task_status="open", task_stage="testing",
-            task_labels=["stage:testing"], agent_role="developer",
         )
         assert result.next_stage == "pr-creation"
 

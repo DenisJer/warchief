@@ -14,26 +14,36 @@ from warchief.state_machine import (
 
 
 class TestGetNextStage:
-    def test_development_to_reviewing(self):
-        assert get_next_stage("development", []) == "reviewing"
+    def test_development_to_testing(self):
+        # Testing before reviewing in new pipeline order
+        assert get_next_stage("development", []) == "testing"
 
-    def test_reviewing_to_testing_no_security(self):
-        assert get_next_stage("reviewing", []) == "testing"
+    def test_testing_to_reviewing(self):
+        assert get_next_stage("testing", []) == "reviewing"
+
+    def test_reviewing_to_pr_creation_no_security(self):
+        assert get_next_stage("reviewing", []) == "pr-creation"
 
     def test_reviewing_to_security_with_label(self):
         assert get_next_stage("reviewing", ["security"]) == "security-review"
 
-    def test_security_review_to_testing(self):
-        assert get_next_stage("security-review", ["security"]) == "testing"
-
-    def test_testing_to_pr_creation(self):
-        assert get_next_stage("testing", []) == "pr-creation"
+    def test_security_review_to_pr_creation(self):
+        assert get_next_stage("security-review", ["security"]) == "pr-creation"
 
     def test_pr_creation_is_terminal(self):
         assert get_next_stage("pr-creation", []) is None
 
     def test_unknown_stage(self):
         assert get_next_stage("nonexistent", []) is None
+
+    def test_bug_skips_planning(self):
+        assert get_next_stage("development", [], task_type="bug") == "testing"
+
+    def test_feature_starts_with_planning(self):
+        from warchief.state_machine import get_first_stage
+        assert get_first_stage("feature") == "planning"
+        assert get_first_stage("bug") == "development"
+        assert get_first_stage("investigation") == "investigation"
 
 
 # ── verify_single_stage ─────────────────────────────────────────
@@ -138,15 +148,15 @@ class TestBlocked:
 
 
 class TestDevelopment:
-    def test_success_advances_to_reviewing(self):
+    def test_success_advances_to_testing(self):
         r = dispatch_transition(
             task_status="open", task_stage="development",
             task_labels=["stage:development"], agent_role="developer",
             branch_has_commits=True,
         )
         assert r.status == "open"
-        assert r.next_stage == "reviewing"
-        assert "stage:reviewing" in r.add_labels
+        assert r.next_stage == "testing"
+        assert "stage:testing" in r.add_labels
         assert "stage:development" in r.remove_labels
 
     def test_no_commits_stays(self):
@@ -183,7 +193,7 @@ class TestDevelopment:
             branch_has_commits=True,
         )
         assert r.status == "open"
-        assert r.next_stage == "reviewing"
+        assert r.next_stage == "testing"
 
     def test_no_commits_after_3_spawns_blocks(self):
         r = dispatch_transition(
@@ -229,13 +239,13 @@ class TestDevelopment:
 
 
 class TestReviewing:
-    def test_approved_advances_to_testing(self):
+    def test_approved_advances_to_pr_creation(self):
         r = dispatch_transition(
             task_status="open", task_stage="reviewing",
             task_labels=["stage:reviewing"], agent_role="reviewer",
         )
-        assert r.next_stage == "testing"
-        assert "stage:testing" in r.add_labels
+        assert r.next_stage == "pr-creation"
+        assert "stage:pr-creation" in r.add_labels
 
     def test_approved_with_security_label(self):
         r = dispatch_transition(
@@ -269,13 +279,13 @@ class TestReviewing:
 
 
 class TestSecurityReview:
-    def test_approved_advances_to_testing(self):
+    def test_approved_advances_to_pr_creation(self):
         r = dispatch_transition(
             task_status="open", task_stage="security-review",
             task_labels=["stage:security-review", "security"],
             agent_role="security_reviewer",
         )
-        assert r.next_stage == "testing"
+        assert r.next_stage == "pr-creation"
 
     def test_rejected_back_to_development(self):
         r = dispatch_transition(
@@ -300,15 +310,15 @@ class TestTesting:
         assert r.next_stage is None
         assert not r.has_changes
 
-    def test_approved_advances_to_pr_creation(self):
-        """After needs-testing removed (approved), advance to pr-creation."""
+    def test_approved_advances_to_reviewing(self):
+        """After tester passes, advance to reviewing."""
         r = dispatch_transition(
             task_status="open", task_stage="testing",
             task_labels=["stage:testing"],
-            agent_role="developer",
+            agent_role="tester",
         )
-        assert r.next_stage == "pr-creation"
-        assert "stage:pr-creation" in r.add_labels
+        assert r.next_stage == "reviewing"
+        assert "stage:reviewing" in r.add_labels
 
     def test_rejected_back_to_development(self):
         """Rejected after testing goes back to development."""

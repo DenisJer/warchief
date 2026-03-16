@@ -26,8 +26,9 @@ STAGE_TO_ROLE: dict[str, str] = {
 }
 
 # Pipeline sequences per task type
-PIPELINE_FEATURE = ["planning", "development", "reviewing", "security-review", "testing", "pr-creation"]
-PIPELINE_BUG = ["development", "reviewing", "testing", "pr-creation"]
+# Testing before reviewing — reviewer sees code + tests together
+PIPELINE_FEATURE = ["planning", "development", "testing", "reviewing", "security-review", "pr-creation"]
+PIPELINE_BUG = ["development", "testing", "reviewing", "pr-creation"]
 PIPELINE_INVESTIGATION = ["investigation"]
 
 TYPE_TO_PIPELINE: dict[str, list[str]] = {

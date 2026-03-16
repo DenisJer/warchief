@@ -192,20 +192,41 @@ def build_claude_command(
             f"warchief agent-update --task-id {task.id} --status open\n"
             "```\n"
         )
-    elif role_name in ("security_reviewer", "tester"):
+    elif role_name == "tester":
+        task_prompt += (
+            "\n## CRITICAL: Before you exit, you MUST do these three things:\n"
+            "### Step 1: Commit your tests\n"
+            "IMPORTANT: Only `git add` TEST files you created. Do NOT modify the developer's code.\n"
+            "```bash\n"
+            "git add <test-files-only>\n"
+            "git commit -m 'test: add comprehensive tests for <feature>'\n"
+            "```\n"
+            "### Step 2: Write handoff notes\n"
+            "```bash\n"
+            f"warchief agent-update --task-id {task.id} --handoff 'Tests: <count> tests written. "
+            "Covered: <what was tested>. Result: <all pass / N failures>'\n"
+            "```\n"
+            "### Step 3: Signal your decision\n"
+            "If ALL tests PASS:\n"
+            f"  warchief agent-update --task-id {task.id} --status open\n"
+            "If tests FAIL (bugs in developer's code):\n"
+            f"  warchief agent-update --task-id {task.id} --status open --add-label rejected\n"
+            f"  warchief agent-update --task-id {task.id} --comment '<specific failures and where the bugs are>'\n"
+        )
+    elif role_name == "security_reviewer":
         task_prompt += (
             "\n## CRITICAL: Before you exit, you MUST do these two things:\n"
             "### Step 1: Write handoff notes\n"
             "```bash\n"
-            f"warchief agent-update --task-id {task.id} --handoff 'Checked: <what you tested/reviewed>. "
-            "Result: <passed/failed>. Details: <findings or concerns>'\n"
+            f"warchief agent-update --task-id {task.id} --handoff 'Checked: <what you reviewed>. "
+            "Result: <passed/failed>. Details: <security findings or concerns>'\n"
             "```\n"
             "### Step 2: Signal your decision\n"
             "If PASSED:\n"
             f"  warchief agent-update --task-id {task.id} --status open\n"
             "If FAILED:\n"
             f"  warchief agent-update --task-id {task.id} --status open --add-label rejected\n"
-            f"  warchief agent-update --task-id {task.id} --comment '<specific feedback>'\n"
+            f"  warchief agent-update --task-id {task.id} --comment '<specific security issues>'\n"
         )
     elif role_name == "integrator":
         task_prompt += (
