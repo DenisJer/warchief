@@ -543,6 +543,17 @@
   }
 
   function render(s) {
+    // Save scroll positions before re-render
+    var scrollState = {};
+    document.querySelectorAll('.stage-tasks, .card-body, .sidebar, .main').forEach(function(el) {
+      if (el.scrollTop > 0 || el.scrollLeft > 0) {
+        var id = el.id || el.className;
+        scrollState[id] = {top: el.scrollTop, left: el.scrollLeft};
+      }
+    });
+    // Also save page scroll
+    var pageScroll = {top: window.scrollY, left: window.scrollX};
+
     // Watcher status button
     var wb = document.getElementById('watcherBtn');
     if (s.watcher_running) {
@@ -585,7 +596,7 @@
           else if (t.labels.indexOf('budget-exceeded') >= 0) blockedReason = 'Budget limit exceeded — approve more or drop';
           else if (t.labels.indexOf('decomposed') >= 0) blockedReason = 'Decomposed into sub-tasks';
           else if (t.labels.indexOf('needs-testing') >= 0) blockedReason = 'Waiting for manual test approval';
-          else blockedReason = 'Blocked — check events for details';
+          else blockedReason = t.block_reason || 'Blocked — check events for details';
         }
         return '<div class="task-card">' +
           '<div class="task-id">' + esc(t.id) + '</div>' +
@@ -733,6 +744,16 @@
     } else {
       eb.innerHTML = '<div class="empty">No recent events</div>';
     }
+
+    // Restore scroll positions after re-render
+    document.querySelectorAll('.stage-tasks, .card-body, .sidebar, .main').forEach(function(el) {
+      var id = el.id || el.className;
+      if (scrollState[id]) {
+        el.scrollTop = scrollState[id].top;
+        el.scrollLeft = scrollState[id].left;
+      }
+    });
+    window.scrollTo(pageScroll.left, pageScroll.top);
   }
 
   // Actions

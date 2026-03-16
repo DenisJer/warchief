@@ -83,6 +83,16 @@ def _build_state() -> dict:
                           if m.message_type == "question"]
                 if q_msgs:
                     question_text = q_msgs[-1].body
+            # Get block reason from events
+            block_reason = ""
+            if t.status == "blocked":
+                block_evts = store.get_events(task_id=t.id, limit=5)
+                for ev in block_evts:
+                    if ev.event_type == "block" and ev.details:
+                        reason = ev.details.get("failure_reason", "")
+                        if reason:
+                            block_reason = reason
+                            break
             cards.append({
                 "id": t.id,
                 "title": t.title,
@@ -92,6 +102,7 @@ def _build_state() -> dict:
                 "labels": t.labels,
                 "scratchpad": scratchpad[:500] if scratchpad else "",
                 "question": question_text,
+                "block_reason": block_reason,
             })
         pipeline.append({"stage": stage, "tasks": cards, "count": len(cards)})
 
