@@ -145,6 +145,16 @@ def _build_plain_snapshot(store: TaskStore, project_root: Path) -> str:
         lines.append(f"    Cache Read:  {cost_summary.total_cache_read_tokens:,}")
         lines.append(f"    Cache Write: {cost_summary.total_cache_write_tokens:,}")
         lines.append(f"    Out:         {cost_summary.total_output_tokens:,}")
+        lines.append(f"    Cost:        ${cost_summary.total_cost_usd:.2f}")
+        if config.budget.session_limit > 0:
+            pct = cost_summary.total_cost_usd / config.budget.session_limit * 100
+            bar_len = 30
+            filled = int(bar_len * min(pct, 100) / 100)
+            bar = "█" * filled + "░" * (bar_len - filled)
+            warn = " !! OVER" if pct >= 100 else ""
+            lines.append(f"    Budget:      [{bar}] {pct:.0f}% of ${config.budget.session_limit:.2f}{warn}")
+        if config.budget.per_task_default > 0:
+            lines.append(f"    Per-task:    ${config.budget.per_task_default:.2f} default")
     else:
         lines.append("    (no token data yet)")
 

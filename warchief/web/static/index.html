@@ -451,7 +451,9 @@
         return '<div class="task-card">' +
           '<div class="task-id">' + esc(t.id) + '</div>' +
           '<div class="task-title">' + esc(t.title) + '</div>' +
-          '<div class="task-meta"><span class="' + statusCls + '">' + esc(t.status) + '</span><span>' + esc(t.age) + '</span></div>' +
+          '<div class="task-meta"><span class="' + statusCls + '">' + esc(t.status) + '</span>' +
+          (t.labels && t.labels.indexOf('budget-exceeded') >= 0 ? '<span class="status" style="background:#8C1616;color:#FFD100">$OVER</span>' : '') +
+          '<span>' + esc(t.age) + '</span></div>' +
           (agentStr ? '<div style="margin-top:2px">' + agentStr + '</div>' : '') +
           '<div class="task-actions">' +
             '<button class="btn btn-danger" onclick="doAction(\'drop\',\'' + esc(t.id) + '\')">drop</button>' +
@@ -509,6 +511,22 @@
       '<div class="token-item"><div class="token-label">Output</div><div class="token-value">' + fmt(s.tokens.output) + '</div></div>' +
     '</div>' +
     '<div class="token-cost">Session: $' + s.tokens.session_cost_usd.toFixed(2) + '  &nbsp;|&nbsp;  All-time: $' + s.tokens.cost_usd.toFixed(2) + '</div>' +
+    (function() {
+      var b = s.tokens.budget || {};
+      if (!b.session_limit) return '';
+      var pct = Math.min(100, (s.tokens.session_cost_usd / b.session_limit) * 100);
+      var barColor = pct >= 100 ? '#8C1616' : pct >= 80 ? '#f0b27a' : '#82e0aa';
+      return '<div style="padding:6px 0;border-top:1px solid #2a2a4a;margin-top:6px">' +
+        '<div style="display:flex;justify-content:space-between;font-size:10px;color:#888;text-transform:uppercase;margin-bottom:4px">' +
+          '<span>Session Budget</span>' +
+          '<span style="color:' + barColor + '">$' + s.tokens.session_cost_usd.toFixed(2) + ' / $' + b.session_limit.toFixed(2) + '</span>' +
+        '</div>' +
+        '<div style="background:#0f0f23;border-radius:3px;height:6px;overflow:hidden">' +
+          '<div style="background:' + barColor + ';height:100%;width:' + pct.toFixed(1) + '%;transition:width 0.5s"></div>' +
+        '</div>' +
+        (b.per_task_default ? '<div style="font-size:10px;color:#666;margin-top:4px">Per-task limit: $' + b.per_task_default.toFixed(2) + '</div>' : '') +
+      '</div>';
+    })() +
     (modelRows ? '<div style="padding:4px 0;border-top:1px solid #2a2a4a;margin-top:6px"><div style="font-size:10px;color:#888;text-transform:uppercase;margin-bottom:4px">By Model</div>' + modelRows + '</div>' : '') +
     (roleRows ? '<div style="padding:4px 0;border-top:1px solid #2a2a4a;margin-top:4px"><div style="font-size:10px;color:#888;text-transform:uppercase;margin-bottom:4px">By Role</div>' + roleRows + '</div>' : '');
 

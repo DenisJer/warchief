@@ -130,6 +130,10 @@ def _build_state() -> dict:
                 ), 4),
                 "by_model": {k: round(v, 4) for k, v in cost_summary.by_model.items()},
                 "by_role": {k: round(v, 4) for k, v in cost_summary.by_role.items()},
+                "budget": {
+                    "session_limit": config.budget.session_limit,
+                    "per_task_default": config.budget.per_task_default,
+                },
             },
             "pipeline": pipeline,
             "agents": agent_list,
