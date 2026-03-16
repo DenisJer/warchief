@@ -737,6 +737,7 @@ class Watcher:
             max_rejections=MAX_REJECTIONS,
             max_crashes=MAX_CRASHES,
             max_spawns=MAX_TOTAL_SPAWNS,
+            task_type=task.type,
         )
 
         log.info(
@@ -771,6 +772,22 @@ class Watcher:
         if agent_crashed and task.status == "in_progress":
             task_updates["crash_count"] = task.crash_count + 1
             self.store.update_agent(agent.id, crash_count=agent.crash_count + 1)
+
+        # Auto-detect labels from changed files after development
+        if result.next_stage and task.stage == "development":
+            changed_files = self._get_changed_files(task)
+            auto_labels = _detect_labels(changed_files)
+            if auto_labels:
+                labels = task_updates.get("labels", list(task.labels))
+                added = []
+                for lbl in auto_labels:
+                    if lbl not in labels:
+                        labels.append(lbl)
+                        added.append(lbl)
+                if added:
+                    task_updates["labels"] = labels
+                    self._emit(f"Task {task.id}: auto-detected labels: {', '.join(added)}")
+                    log.info("Auto-detected labels for %s: %s", task.id, added)
 
         # Skip unnecessary stages based on changed files
         if result.next_stage in ("security-review", "testing"):
@@ -1007,7 +1024,7 @@ class Watcher:
                     task_stage=task.stage or "",
                     task_labels=task.labels,
                     agent_role=agent.role,
-                    agent_exit_code=0,  # Agent updated status to open — treat as clean exit
+                    agent_exit_code=0,
                     branch_has_commits=self._branch_has_commits(task),
                     rejection_count=task.rejection_count,
                     crash_count=task.crash_count,
@@ -1015,6 +1032,7 @@ class Watcher:
                     max_rejections=MAX_REJECTIONS,
                     max_crashes=MAX_CRASHES,
                     max_spawns=MAX_TOTAL_SPAWNS,
+                    task_type=task.type,
                 )
                 if result.has_changes:
                     self._apply_transition(task, agent, result)
@@ -1094,8 +1112,9 @@ class Watcher:
             # Don't release tasks still waiting on deps
             if "waiting" in task.labels:
                 continue
-            # Release into development (first stage)
-            first_stage = "development"
+            # Release into first stage based on task type
+            from warchief.state_machine import get_first_stage
+            first_stage = get_first_stage(task.type)
             new_labels = list(task.labels) + [f"stage:{first_stage}"]
             self.store.update_task(task.id, stage=first_stage, labels=new_labels)
             self._emit(f"Released task {task.id} ({task.title}) into {first_stage}")
@@ -1273,6 +1292,49 @@ class Watcher:
 
         signal.signal(signal.SIGTERM, handle_stop)
         signal.signal(signal.SIGINT, handle_stop)
+
+
+def _detect_labels(changed_files: list[str]) -> list[str]:
+    """Auto-detect labels from changed file paths and names.
+
+    Returns labels that should be added based on what was changed:
+    - 'security' if auth/crypto/password/token/session files changed
+    - 'frontend' if HTML/CSS/JS/Vue/React files changed
+    """
+    from warchief.config import FRONTEND_EXTENSIONS
+
+    labels: list[str] = []
+
+    security_patterns = (
+        "auth", "login", "password", "passwd", "credential", "token",
+        "session", "cookie", "jwt", "oauth", "crypto", "encrypt", "decrypt",
+        "secret", "apikey", "api_key", "permission", "rbac", "acl",
+        "sanitiz", "xss", "csrf", "cors", "ssl", "tls", "cert",
+    )
+
+    has_frontend = False
+    has_security = False
+
+    for f in changed_files:
+        f_lower = f.lower()
+        ext = "." + f.rsplit(".", 1)[-1] if "." in f else ""
+
+        # Frontend detection
+        if ext.lower() in FRONTEND_EXTENSIONS:
+            has_frontend = True
+
+        # Security detection — check file path for security-related patterns
+        for pat in security_patterns:
+            if pat in f_lower:
+                has_security = True
+                break
+
+    if has_security:
+        labels.append("security")
+    if has_frontend:
+        labels.append("frontend")
+
+    return labels
 
 
 def _is_process_alive(pid: int) -> bool:

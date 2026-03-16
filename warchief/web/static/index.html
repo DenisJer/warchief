@@ -398,21 +398,37 @@
   <div class="modal" style="min-width:500px">
     <h3>New Task</h3>
     <input type="text" id="createTitle" placeholder="Task title (required)" />
-    <textarea id="createDesc" placeholder="Description (optional)" style="width:100%;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:8px 12px;border-radius:4px;font-size:14px;margin-bottom:12px;min-height:60px;resize:vertical;font-family:inherit"></textarea>
-    <div style="display:flex;gap:8px;margin-bottom:12px">
-      <select id="createType" style="flex:1;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:6px 8px;border-radius:4px;font-size:13px">
-        <option value="feature">Feature</option>
-        <option value="bug">Bug</option>
-        <option value="investigation">Investigation</option>
-      </select>
-      <input type="number" id="createPriority" value="5" min="1" max="10" style="width:80px;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:6px 8px;border-radius:4px;font-size:13px" placeholder="Priority" />
+    <textarea id="createDesc" placeholder="Description — what should the agent build? Be specific about requirements, files, and expected behavior." style="width:100%;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:8px 12px;border-radius:4px;font-size:14px;margin-bottom:12px;min-height:60px;resize:vertical;font-family:inherit"></textarea>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <div style="flex:1">
+        <label style="font-size:10px;color:#888;text-transform:uppercase;display:block;margin-bottom:4px">Type</label>
+        <select id="createType" style="width:100%;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:6px 8px;border-radius:4px;font-size:13px">
+          <option value="feature">🔨 Feature — new functionality</option>
+          <option value="bug">🐛 Bug — fix broken behavior</option>
+          <option value="investigation">🔍 Investigation — research / prototype</option>
+        </select>
+      </div>
+      <div style="width:120px">
+        <label style="font-size:10px;color:#888;text-transform:uppercase;display:block;margin-bottom:4px">Priority (1-10)</label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="range" id="createPriority" value="5" min="1" max="10" style="flex:1;accent-color:#FFD100" oninput="document.getElementById('priVal').textContent=this.value" />
+          <span id="priVal" style="color:#FFD100;font-weight:bold;font-size:14px;min-width:18px;text-align:center">5</span>
+        </div>
+      </div>
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:10px;color:#888;text-transform:uppercase;display:block;margin-bottom:4px">Labels <span style="text-transform:none;color:#555">(auto-detected from code if not set)</span></label>
+      <div id="labelPicker" style="display:flex;flex-wrap:wrap;gap:4px"></div>
     </div>
     <div id="createAdvanced" style="display:none">
-      <input type="text" id="createLabels" placeholder="Labels (comma-separated)" style="margin-bottom:8px" />
+      <input type="text" id="createLabelsCustom" placeholder="Custom labels (comma-separated)" style="margin-bottom:8px" />
       <input type="text" id="createDeps" placeholder="Dependencies (task IDs, comma-separated)" style="margin-bottom:8px" />
       <input type="text" id="createTools" placeholder="MCP tools (e.g. figma console, supabase)" style="margin-bottom:8px" />
-      <input type="number" id="createBudget" value="0" step="0.5" min="0" style="width:120px;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:6px 8px;border-radius:4px;font-size:13px" placeholder="Budget $" />
-      <span style="font-size:11px;color:#666;margin-left:6px">Budget $ (0 = default)</span>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <label style="font-size:10px;color:#888;text-transform:uppercase">Budget $</label>
+        <input type="number" id="createBudget" value="0" step="0.5" min="0" style="width:100px;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:6px 8px;border-radius:4px;font-size:13px" />
+        <span style="font-size:11px;color:#555">0 = use project default</span>
+      </div>
     </div>
     <div style="margin-bottom:12px">
       <a href="#" onclick="document.getElementById('createAdvanced').style.display=document.getElementById('createAdvanced').style.display==='none'?'block':'none';return false" style="font-size:12px;color:#85c1e9">Advanced options</a>
@@ -491,12 +507,31 @@
           (t.labels && t.labels.indexOf('budget-exceeded') >= 0 ? '<span class="status" style="background:#8C1616;color:#FFD100">$OVER</span>' : '') +
           '<span>' + esc(t.age) + '</span></div>' +
           (agentStr ? '<div style="margin-top:2px">' + agentStr + '</div>' : '') +
-          '<div class="task-actions">' +
-            '<button class="btn btn-danger" onclick="doAction(\'drop\',\'' + esc(t.id) + '\')">drop</button>' +
-            '<button class="btn" onclick="openModal(\'grant\',\'' + esc(t.id) + '\')">grant</button>' +
-            '<button class="btn" onclick="openModal(\'nudge\',\'' + esc(t.id) + '\')">nudge</button>' +
-            '<button class="btn" onclick="openModal(\'tell\',\'' + esc(t.id) + '\')">tell</button>' +
-          '</div>' +
+          (function() {
+            var actions = '<div class="task-actions">';
+            // Plan approval buttons
+            if (t.labels && t.labels.indexOf('needs-plan-approval') >= 0) {
+              actions += '<button class="btn" style="border-color:#82e0aa;color:#82e0aa" onclick="doPlanAction(\'approve\',\'' + esc(t.id) + '\')">Approve Plan</button>';
+              actions += '<button class="btn" onclick="openModal(\'reject-plan\',\'' + esc(t.id) + '\')">Reject Plan</button>';
+            }
+            // Investigation review buttons
+            else if (t.labels && t.labels.indexOf('needs-review') >= 0) {
+              actions += '<button class="btn" style="border-color:#82e0aa;color:#82e0aa" onclick="doInvestAction(\'approve\',\'' + esc(t.id) + '\')">Accept</button>';
+              actions += '<button class="btn" onclick="openModal(\'reject-investigation\',\'' + esc(t.id) + '\')">More Info</button>';
+              actions += '<button class="btn" style="border-color:#FFD100;color:#FFD100" onclick="doInvestAction(\'escalate\',\'' + esc(t.id) + '\')">Escalate</button>';
+            }
+            // Default actions
+            actions += '<button class="btn btn-danger" onclick="doAction(\'drop\',\'' + esc(t.id) + '\')">drop</button>';
+            actions += '<button class="btn" onclick="openModal(\'grant\',\'' + esc(t.id) + '\')">grant</button>';
+            actions += '<button class="btn" onclick="openModal(\'nudge\',\'' + esc(t.id) + '\')">nudge</button>';
+            actions += '<button class="btn" onclick="openModal(\'tell\',\'' + esc(t.id) + '\')">tell</button>';
+            actions += '</div>';
+            // Show scratchpad preview if available
+            if (t.scratchpad) {
+              actions += '<div style="margin-top:4px;padding:4px 6px;background:#0f0f23;border-radius:3px;font-size:10px;color:#888;max-height:60px;overflow:hidden;white-space:pre-wrap">' + esc(t.scratchpad.substring(0,200)) + '</div>';
+            }
+            return actions;
+          })() +
         '</div>';
       }).join('') : '<div class="empty">empty</div>';
 
@@ -639,12 +674,46 @@
     else input.value = '';
   }
 
+  async function doPlanAction(action, taskId) {
+    actionInProgress = true;
+    try {
+      if (action === 'approve') {
+        var r = await apiPost('/api/approve-plan/' + encodeURIComponent(taskId));
+        if (r.error) window.alert('Error: ' + r.error);
+      }
+    } finally {
+      actionInProgress = false;
+      if (state) render(state);
+    }
+  }
+
+  async function doInvestAction(action, taskId) {
+    actionInProgress = true;
+    try {
+      if (action === 'approve') {
+        var r = await apiPost('/api/approve-investigation/' + encodeURIComponent(taskId));
+        if (r.error) window.alert('Error: ' + r.error);
+      } else if (action === 'escalate') {
+        if (!window.confirm('Escalate investigation ' + taskId + '?\nThis will create a new task to decompose findings into development tasks.')) return;
+        var r = await apiPost('/api/escalate/' + encodeURIComponent(taskId));
+        if (r.error) window.alert('Error: ' + r.error);
+      }
+    } finally {
+      actionInProgress = false;
+      if (state) render(state);
+    }
+  }
+
   function openModal(action, taskId) {
     modalAction = action;
     modalTaskId = taskId;
     document.getElementById('modalTitle').textContent = action.charAt(0).toUpperCase() + action.slice(1) + ' ' + taskId;
     document.getElementById('modalInput').value = '';
-    document.getElementById('modalInput').placeholder = action === 'grant' ? 'e.g. figma console, supabase' : 'Enter message...';
+    var placeholder = 'Enter message...';
+    if (action === 'grant') placeholder = 'e.g. figma console, supabase';
+    else if (action === 'reject-plan') placeholder = 'What should the planner change?';
+    else if (action === 'reject-investigation') placeholder = 'What else should be investigated?';
+    document.getElementById('modalInput').placeholder = placeholder;
     document.getElementById('modalOverlay').classList.add('active');
     setTimeout(function() { document.getElementById('modalInput').focus(); }, 100);
   }
@@ -674,9 +743,37 @@
     if (e.key === 'Escape') { closeModal(); closeCreateModal(); }
   });
 
+  // Label picker
+  var availableLabels = [
+    {name: 'security', icon: '🔒', desc: 'Force security review (auto-detected from code if not set)'},
+    {name: 'frontend', icon: '🎨', desc: 'Force E2E tests (auto-detected from file types if not set)'},
+  ];
+  var selectedLabels = new Set();
+
+  function renderLabelPicker() {
+    var el = document.getElementById('labelPicker');
+    el.innerHTML = availableLabels.map(function(l) {
+      var active = selectedLabels.has(l.name);
+      return '<button type="button" onclick="toggleLabel(\'' + l.name + '\')" title="' + esc(l.desc) + '" style="' +
+        'background:' + (active ? '#1a3a1a' : '#0f0f23') + ';' +
+        'border:1px solid ' + (active ? '#82e0aa' : '#2a2a4a') + ';' +
+        'color:' + (active ? '#82e0aa' : '#888') + ';' +
+        'padding:4px 10px;border-radius:12px;font-size:12px;cursor:pointer;transition:all 0.15s">' +
+        l.icon + ' ' + l.name + '</button>';
+    }).join('');
+  }
+
+  function toggleLabel(name) {
+    if (selectedLabels.has(name)) selectedLabels.delete(name);
+    else selectedLabels.add(name);
+    renderLabelPicker();
+  }
+
   // Create task modal
   function openCreateModal() {
     actionInProgress = true;
+    selectedLabels.clear();
+    renderLabelPicker();
     document.getElementById('createOverlay').classList.add('active');
     setTimeout(function() { document.getElementById('createTitle').focus(); }, 100);
   }
@@ -695,7 +792,9 @@
       description: document.getElementById('createDesc').value.trim(),
       type: document.getElementById('createType').value,
       priority: parseInt(document.getElementById('createPriority').value) || 5,
-      labels: document.getElementById('createLabels').value.trim(),
+      labels: Array.from(selectedLabels).concat(
+        (document.getElementById('createLabelsCustom').value.trim()).split(',').filter(function(s){return s.trim()})
+      ).join(','),
       deps: document.getElementById('createDeps').value.trim(),
       tools: document.getElementById('createTools').value.trim(),
       budget: parseFloat(document.getElementById('createBudget').value) || 0,
@@ -707,7 +806,9 @@
     document.getElementById('createDesc').value = '';
     document.getElementById('createType').value = 'feature';
     document.getElementById('createPriority').value = '5';
-    document.getElementById('createLabels').value = '';
+    document.getElementById('priVal').textContent = '5';
+    document.getElementById('createLabelsCustom').value = '';
+    selectedLabels.clear();
     document.getElementById('createDeps').value = '';
     document.getElementById('createTools').value = '';
     document.getElementById('createBudget').value = '0';

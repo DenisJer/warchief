@@ -1,0 +1,22 @@
+[identity]
+name = "planner"
+prompt_file = "prompts/planner.md"
+max_concurrent = 2
+description = "Strategist. Analyzes the task and writes an implementation plan before code is written."
+
+[model]
+default = "claude-sonnet-4-20250514"
+max_turns = 15
+
+[permissions]
+allowed_tools = ["Read", "Glob", "Grep", "Bash"]
+disallowed_bash_commands = ["rm -rf /", "sudo rm", "chmod 777", "mkfs"]
+
+[health]
+timeout_seconds = 1800
+max_crashes = 2
+max_rejections = 3
+max_total_spawns = 10
+
+[worktree]
+type = "none"

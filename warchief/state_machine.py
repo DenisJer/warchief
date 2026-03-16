@@ -5,28 +5,42 @@ Input: current state. Output: what should change.
 """
 from __future__ import annotations
 
+from warchief.config import TYPE_TO_PIPELINE, PIPELINE_FEATURE
 from warchief.models import TransitionResult
 
-# Stage flow order (without optional stages)
-_STAGE_ORDER = ["development", "reviewing", "testing", "pr-creation"]
-_STAGE_ORDER_WITH_SECURITY = [
-    "development", "reviewing", "security-review", "testing", "pr-creation"
-]
+
+def get_pipeline_for_type(task_type: str) -> list[str]:
+    """Get the pipeline stage sequence for a task type."""
+    return TYPE_TO_PIPELINE.get(task_type, PIPELINE_FEATURE)
 
 
-def get_next_stage(current_stage: str, task_labels: list[str]) -> str | None:
-    """Given current stage and labels, return the next stage in the pipeline."""
+def get_next_stage(
+    current_stage: str,
+    task_labels: list[str],
+    task_type: str = "feature",
+) -> str | None:
+    """Given current stage, labels, and type, return the next pipeline stage."""
+    pipeline = get_pipeline_for_type(task_type)
+
+    # Security review is optional — skip if not labeled
     has_security = "security" in task_labels
-    order = _STAGE_ORDER_WITH_SECURITY if has_security else _STAGE_ORDER
+    if not has_security:
+        pipeline = [s for s in pipeline if s != "security-review"]
 
     try:
-        idx = order.index(current_stage)
+        idx = pipeline.index(current_stage)
     except ValueError:
         return None
 
-    if idx + 1 < len(order):
-        return order[idx + 1]
+    if idx + 1 < len(pipeline):
+        return pipeline[idx + 1]
     return None
+
+
+def get_first_stage(task_type: str) -> str:
+    """Get the first stage for a task type."""
+    pipeline = get_pipeline_for_type(task_type)
+    return pipeline[0]
 
 
 def verify_single_stage(labels: list[str]) -> list[str]:
@@ -51,6 +65,7 @@ def dispatch_transition(
     max_rejections: int = 3,
     max_crashes: int = 3,
     max_spawns: int = 20,
+    task_type: str = "feature",
 ) -> TransitionResult:
     """Determine the next state transition. Pure function — no side effects."""
 
@@ -58,9 +73,6 @@ def dispatch_transition(
     has_rejected = "rejected" in task_labels
 
     # --- Spawn limit reached ---
-    # Only block on spawn limit when the task would be re-spawned (status=open).
-    # Don't block when an agent just finished and is reporting results (closed)
-    # — let stage handlers evaluate the completion first.
     if spawn_count >= max_spawns and task_status == "open":
         return TransitionResult(
             status="blocked",
@@ -83,10 +95,7 @@ def dispatch_transition(
             requires_conductor=True,
         )
 
-    # --- Agent exited cleanly (code 0) but task still in_progress ---
-    # This means the agent completed its work but forgot to update status.
-    # Treat as if the agent set status to "open" (work complete) so the
-    # stage-specific handlers below can evaluate and potentially advance.
+    # --- Agent exited cleanly but task still in_progress ---
     if task_status == "in_progress" and agent_exit_code == 0:
         task_status = "open"
 
@@ -105,29 +114,79 @@ def dispatch_transition(
     if not task_stage:
         return TransitionResult()
 
+    # --- PLANNING stage ---
+    if task_stage == "planning":
+        return _handle_planning(task_status, task_labels, stage_label, task_type)
+
     # --- DEVELOPMENT stage ---
     if task_stage == "development":
         return _handle_development(
             task_status, task_labels, stage_label,
             has_rejected, branch_has_commits,
             rejection_count, max_rejections, spawn_count,
+            task_type,
         )
 
     # --- REVIEWING stage ---
     if task_stage == "reviewing":
-        return _handle_reviewing(task_status, task_labels, stage_label, has_rejected)
+        return _handle_reviewing(task_status, task_labels, stage_label, has_rejected, task_type)
 
     # --- SECURITY-REVIEW stage ---
     if task_stage == "security-review":
-        return _handle_security_review(task_status, task_labels, stage_label, has_rejected)
+        return _handle_security_review(task_status, task_labels, stage_label, has_rejected, task_type)
 
-    # --- TESTING stage (human-driven) ---
+    # --- TESTING stage ---
     if task_stage == "testing":
-        return _handle_testing(task_status, task_labels, stage_label)
+        return _handle_testing(task_status, task_labels, stage_label, task_type)
 
     # --- PR-CREATION stage ---
     if task_stage == "pr-creation":
         return _handle_pr_creation(task_status, task_labels, stage_label)
+
+    # --- INVESTIGATION stage ---
+    if task_stage == "investigation":
+        return _handle_investigation(task_status, task_labels, stage_label)
+
+    return TransitionResult()
+
+
+def _handle_planning(
+    task_status: str,
+    task_labels: list[str],
+    stage_label: str | None,
+    task_type: str,
+) -> TransitionResult:
+    """Planning stage — planner writes a plan, waits for user approval."""
+    is_open = task_status in ("open", "closed")
+    if not is_open:
+        return TransitionResult()
+
+    has_rejected = "rejected" in task_labels
+
+    if has_rejected:
+        # User rejected the plan — stay in planning for another attempt
+        return TransitionResult(
+            status="open",
+            remove_labels=["rejected"],
+        )
+
+    # Plan complete — block for user approval
+    if "plan-approved" in task_labels:
+        # User approved — advance to development
+        next_stage = get_next_stage("planning", task_labels, task_type)
+        return TransitionResult(
+            status="open",
+            remove_labels=["plan-approved", stage_label] if stage_label else ["plan-approved"],
+            add_labels=[f"stage:{next_stage}"] if next_stage else [],
+            next_stage=next_stage,
+        )
+
+    # Planner finished — block for user approval (unless already waiting)
+    if "needs-plan-approval" not in task_labels:
+        return TransitionResult(
+            status="blocked",
+            add_labels=["needs-plan-approval"],
+        )
 
     return TransitionResult()
 
@@ -141,10 +200,9 @@ def _handle_development(
     rejection_count: int,
     max_rejections: int,
     spawn_count: int = 0,
+    task_type: str = "feature",
 ) -> TransitionResult:
-    # Premature close at non-terminal stage: treat as open
     is_open = task_status in ("open", "closed")
-
     if not is_open:
         return TransitionResult()
 
@@ -156,7 +214,6 @@ def _handle_development(
                 failure_reason=f"Rejected {rejection_count} times",
                 requires_conductor=True,
             )
-        # Remove rejected label, stay in development for retry
         return TransitionResult(
             status="open",
             remove_labels=["rejected"],
@@ -172,8 +229,7 @@ def _handle_development(
             )
         return TransitionResult(status="open")
 
-    # Success: advance to reviewing
-    next_stage = get_next_stage("development", task_labels)
+    next_stage = get_next_stage("development", task_labels, task_type)
     return TransitionResult(
         status="open",
         remove_labels=[stage_label] if stage_label else [],
@@ -187,13 +243,13 @@ def _handle_reviewing(
     task_labels: list[str],
     stage_label: str | None,
     has_rejected: bool,
+    task_type: str = "feature",
 ) -> TransitionResult:
     is_open = task_status in ("open", "closed")
     if not is_open:
         return TransitionResult()
 
     if has_rejected:
-        # Back to development
         return TransitionResult(
             status="open",
             remove_labels=["rejected", stage_label] if stage_label else ["rejected"],
@@ -201,8 +257,7 @@ def _handle_reviewing(
             next_stage="development",
         )
 
-    # Approved: advance
-    next_stage = get_next_stage("reviewing", task_labels)
+    next_stage = get_next_stage("reviewing", task_labels, task_type)
     return TransitionResult(
         status="open",
         remove_labels=[stage_label] if stage_label else [],
@@ -216,6 +271,7 @@ def _handle_security_review(
     task_labels: list[str],
     stage_label: str | None,
     has_rejected: bool,
+    task_type: str = "feature",
 ) -> TransitionResult:
     is_open = task_status in ("open", "closed")
     if not is_open:
@@ -229,7 +285,7 @@ def _handle_security_review(
             next_stage="development",
         )
 
-    next_stage = get_next_stage("security-review", task_labels)
+    next_stage = get_next_stage("security-review", task_labels, task_type)
     return TransitionResult(
         status="open",
         remove_labels=[stage_label] if stage_label else [],
@@ -246,28 +302,20 @@ CONFIG_EXTENSIONS = {".toml", ".yaml", ".yml", ".json", ".ini", ".cfg", ".conf"}
 
 
 def should_skip_testing(changed_files: list[str]) -> bool:
-    """Determine if the testing stage can be skipped.
-
-    Returns True if only non-code files were changed (no frontend, no source).
-    Also skips for documentation-only changes.
-    """
+    """Returns True if only non-code files were changed."""
     from warchief.config import FRONTEND_EXTENSIONS
     for f in changed_files:
         ext = "." + f.rsplit(".", 1)[-1] if "." in f else ""
         ext_lower = ext.lower()
         if ext_lower in FRONTEND_EXTENSIONS:
             return False
-        # Source code files that need testing but aren't frontend
         if ext_lower in (".py", ".go", ".rs", ".java", ".rb", ".php", ".c", ".cpp", ".h"):
             return False
     return True
 
 
 def should_skip_security_review(changed_files: list[str]) -> bool:
-    """Determine if the security review stage can be skipped.
-
-    Returns True if only docs or config files were changed.
-    """
+    """Returns True if only docs or config files were changed."""
     for f in changed_files:
         ext = "." + f.rsplit(".", 1)[-1] if "." in f else ""
         ext_lower = ext.lower()
@@ -280,14 +328,8 @@ def _handle_testing(
     task_status: str,
     task_labels: list[str],
     stage_label: str | None,
+    task_type: str = "feature",
 ) -> TransitionResult:
-    """Testing stage — tester agent writes and runs tests.
-
-    Tester agent:
-    - Approves (status=open, no rejected label) → advance to pr-creation
-    - Rejects (status=open, rejected label) → back to development
-    - Can also block for manual testing (needs-testing label)
-    """
     is_open = task_status in ("open", "closed")
     if not is_open:
         return TransitionResult()
@@ -295,7 +337,6 @@ def _handle_testing(
     has_rejected = "rejected" in task_labels
 
     if has_rejected:
-        # Tests failed / tester rejected — back to development
         return TransitionResult(
             status="open",
             remove_labels=["rejected", "needs-testing", stage_label] if stage_label else ["rejected", "needs-testing"],
@@ -303,12 +344,10 @@ def _handle_testing(
             next_stage="development",
         )
 
-    # If "needs-testing" is on, waiting for manual approval (e2e)
     if "needs-testing" in task_labels:
         return TransitionResult()
 
-    # Tests passed — advance to pr-creation
-    next_stage = get_next_stage("testing", task_labels)
+    next_stage = get_next_stage("testing", task_labels, task_type)
     return TransitionResult(
         status="open",
         remove_labels=[stage_label] if stage_label else [],
@@ -323,10 +362,42 @@ def _handle_pr_creation(
     stage_label: str | None,
 ) -> TransitionResult:
     if task_status in ("open", "closed"):
-        # PR was created successfully — close the task (terminal state).
         return TransitionResult(
             status="closed",
             remove_labels=[stage_label] if stage_label else [],
+        )
+    return TransitionResult()
+
+
+def _handle_investigation(
+    task_status: str,
+    task_labels: list[str],
+    stage_label: str | None,
+) -> TransitionResult:
+    """Investigation stage — agent researches, writes findings to scratchpad.
+
+    On completion:
+    - Blocks with "needs-review" label for user to review findings
+    - User can: approve (close), reject (re-investigate), or escalate (create sub-tasks)
+    """
+    is_open = task_status in ("open", "closed")
+    if not is_open:
+        return TransitionResult()
+
+    has_rejected = "rejected" in task_labels
+
+    if has_rejected:
+        # User wants more investigation
+        return TransitionResult(
+            status="open",
+            remove_labels=["rejected", "needs-review"],
+        )
+
+    # Investigation complete — block for user review
+    if "needs-review" not in task_labels:
+        return TransitionResult(
+            status="blocked",
+            add_labels=["needs-review"],
         )
 
     return TransitionResult()

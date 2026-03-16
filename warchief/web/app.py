@@ -381,6 +381,121 @@ async def get_agent_log(agent_id: str, lines: int = 200):
         return {"lines": [], "exists": False}
 
 
+@app.post("/api/approve-plan/{task_id}")
+async def approve_plan(task_id: str):
+    """Approve a plan — task advances from planning to development."""
+    store = _store()
+    try:
+        task = store.get_task(task_id)
+        if not task:
+            return {"error": f"Task '{task_id}' not found"}
+        new_labels = [l for l in task.labels if l != "needs-plan-approval"] + ["plan-approved"]
+        store.update_task(task_id, status="open", labels=new_labels)
+        return {"ok": True}
+    finally:
+        store.close()
+
+
+@app.post("/api/reject-plan/{task_id}")
+async def reject_plan(task_id: str, body: ActionBody):
+    """Reject a plan — send feedback, planner will retry."""
+    store = _store()
+    try:
+        task = store.get_task(task_id)
+        if not task:
+            return {"error": f"Task '{task_id}' not found"}
+        # Store feedback as message
+        store.create_message(MessageRecord(
+            id="", from_agent="user", to_agent=task_id,
+            message_type="feedback", body=body.message, persistent=True,
+        ))
+        new_labels = [l for l in task.labels if l != "needs-plan-approval"] + ["rejected"]
+        store.update_task(task_id, status="open", labels=new_labels)
+        return {"ok": True}
+    finally:
+        store.close()
+
+
+@app.post("/api/approve-investigation/{task_id}")
+async def approve_investigation(task_id: str):
+    """Approve investigation findings — close the task."""
+    store = _store()
+    try:
+        task = store.get_task(task_id)
+        if not task:
+            return {"error": f"Task '{task_id}' not found"}
+        store._conn.execute(
+            "UPDATE tasks SET status = 'closed', stage = NULL, updated_at = ? WHERE id = ?",
+            (time.time(), task_id),
+        )
+        store._conn.commit()
+        return {"ok": True}
+    finally:
+        store.close()
+
+
+@app.post("/api/reject-investigation/{task_id}")
+async def reject_investigation(task_id: str, body: ActionBody):
+    """Reject investigation — send feedback, investigator will re-run."""
+    store = _store()
+    try:
+        task = store.get_task(task_id)
+        if not task:
+            return {"error": f"Task '{task_id}' not found"}
+        store.create_message(MessageRecord(
+            id="", from_agent="user", to_agent=task_id,
+            message_type="feedback", body=body.message, persistent=True,
+        ))
+        new_labels = [l for l in task.labels if l != "needs-review"] + ["rejected"]
+        store.update_task(task_id, status="open", labels=new_labels)
+        return {"ok": True}
+    finally:
+        store.close()
+
+
+@app.post("/api/escalate/{task_id}")
+async def escalate_investigation(task_id: str):
+    """Escalate investigation findings — create a conductor task to decompose into sub-tasks."""
+    from warchief.models import TaskRecord
+    from warchief.scratchpad import read_scratchpad
+    import uuid
+
+    store = _store()
+    try:
+        task = store.get_task(task_id)
+        if not task:
+            return {"error": f"Task '{task_id}' not found"}
+
+        findings = read_scratchpad(_project_root, task_id)
+        now = time.time()
+        conductor_id = f"wc-{uuid.uuid4().hex[:6]}"
+
+        record = TaskRecord(
+            id=conductor_id,
+            title=f"Decompose: {task.title}",
+            description=(
+                f"Based on investigation {task_id}, break down the following findings into "
+                f"actionable development tasks:\n\n{findings}"
+            ),
+            status="open",
+            type="feature",
+            priority=task.priority,
+            created_at=now,
+            updated_at=now,
+        )
+        store.create_task(record)
+
+        # Close the investigation task
+        store._conn.execute(
+            "UPDATE tasks SET status = 'closed', stage = NULL, updated_at = ? WHERE id = ?",
+            (now, task_id),
+        )
+        store._conn.commit()
+        return {"ok": True, "conductor_task_id": conductor_id}
+    finally:
+        store.close()
+
+
 @app.get("/api/agent-file")
 async def get_agent_file(path: str):
     """Read a file from an agent's worktree. Only serves files under .warchief-worktrees/."""

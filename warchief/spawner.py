@@ -164,6 +164,34 @@ def build_claude_command(
             f"  warchief agent-update --task-id {task.id} --status open --add-label rejected\n"
             f"  warchief agent-update --task-id {task.id} --comment '<specific feedback>'\n"
         )
+    elif role_name == "planner":
+        task_prompt += (
+            "\n## CRITICAL: Before you exit, you MUST do these two things:\n"
+            "### Step 1: Write your plan as handoff notes\n"
+            "The user will review your plan before development starts.\n"
+            "```bash\n"
+            f"warchief agent-update --task-id {task.id} --handoff 'YOUR FULL PLAN HERE — "
+            "files to change, approach, dependencies, risks, scope estimate'\n"
+            "```\n"
+            "### Step 2: Signal completion\n"
+            "```bash\n"
+            f"warchief agent-update --task-id {task.id} --status open\n"
+            "```\n"
+        )
+    elif role_name == "investigator":
+        task_prompt += (
+            "\n## CRITICAL: Before you exit, you MUST do these two things:\n"
+            "### Step 1: Write your findings as handoff notes\n"
+            "The user will review your findings and decide next steps.\n"
+            "```bash\n"
+            f"warchief agent-update --task-id {task.id} --handoff 'YOUR FINDINGS — "
+            "answer, evidence, recommendations, risks'\n"
+            "```\n"
+            "### Step 2: Signal completion\n"
+            "```bash\n"
+            f"warchief agent-update --task-id {task.id} --status open\n"
+            "```\n"
+        )
     elif role_name in ("security_reviewer", "tester"):
         task_prompt += (
             "\n## CRITICAL: Before you exit, you MUST do these two things:\n"

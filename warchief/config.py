@@ -13,14 +13,27 @@ except ImportError:
 
 # --- Stage / Status Constants ---
 
-STAGES = ["development", "reviewing", "security-review", "testing", "pr-creation"]
+STAGES = ["planning", "development", "reviewing", "security-review", "testing", "pr-creation", "investigation"]
 
 STAGE_TO_ROLE: dict[str, str] = {
+    "planning": "planner",
     "development": "developer",
     "reviewing": "reviewer",
     "security-review": "security_reviewer",
     "testing": "tester",
     "pr-creation": "pr_creator",
+    "investigation": "investigator",
+}
+
+# Pipeline sequences per task type
+PIPELINE_FEATURE = ["planning", "development", "reviewing", "security-review", "testing", "pr-creation"]
+PIPELINE_BUG = ["development", "reviewing", "testing", "pr-creation"]
+PIPELINE_INVESTIGATION = ["investigation"]
+
+TYPE_TO_PIPELINE: dict[str, list[str]] = {
+    "feature": PIPELINE_FEATURE,
+    "bug": PIPELINE_BUG,
+    "investigation": PIPELINE_INVESTIGATION,
 }
 
 # File extensions that indicate front-end changes (triggers e2e tests)
@@ -32,7 +45,7 @@ FRONTEND_EXTENSIONS = {
 
 STATUSES = ["open", "in_progress", "blocked", "closed"]
 
-SPECIAL_LABELS = ["rejected", "waiting", "priority", "security", "frontend", "question", "needs-testing"]
+SPECIAL_LABELS = ["rejected", "waiting", "security", "frontend", "question", "needs-testing", "needs-plan-approval", "needs-review", "budget-exceeded"]
 
 # --- Tuning Constants (defaults, overridable in config.toml) ---
 
