@@ -426,6 +426,11 @@
     }
   }).catch(function(){});
 
+  // Check URL hash for pre-selected agent (from dashboard "logs" button)
+  if (window.location.hash) {
+    selectedAgent = window.location.hash.substring(1);
+  }
+
   // Initial load + poll every 3s
   poll();
   pollTimer = setInterval(poll, 3000);

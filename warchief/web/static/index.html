@@ -629,9 +629,17 @@
               actions += '<button class="btn" title="Ask investigator to dig deeper with your feedback" onclick="openModal(\'reject-investigation\',\'' + esc(t.id) + '\')">More Info</button>';
               actions += '<button class="btn" style="border-color:#FFD100;color:#FFD100" title="Create development tasks from findings" onclick="doInvestAction(\'escalate\',\'' + esc(t.id) + '\')">Escalate</button>';
             }
+            // Retry button for blocked tasks (not plan-approval or review)
+            if (t.status === 'blocked' && !(t.labels && (t.labels.indexOf('needs-plan-approval') >= 0 || t.labels.indexOf('needs-review') >= 0))) {
+              actions += '<button class="btn" style="border-color:#82e0aa;color:#82e0aa" title="Retry — reopen task with feedback, reset counters" onclick="openModal(\'retry\',\'' + esc(t.id) + '\')">Retry</button>';
+            }
             // Decompose button (for planning stage or any non-decomposed task)
             if (!(t.labels && t.labels.indexOf('decomposed') >= 0)) {
               actions += '<button class="btn" style="border-color:#85c1e9;color:#85c1e9" title="Split into smaller sub-tasks that run in parallel" onclick="openDecomposeModal(\'' + esc(t.id) + '\')">Decompose</button>';
+            }
+            // View agent logs — link to agents page with the agent pre-selected
+            if (t.agent_id) {
+              actions += '<button class="btn" title="View agent output log" onclick="window.open(\'/agents#\' + \'' + esc(t.agent_id) + '\',\'_blank\')">logs</button>';
             }
             // Default actions
             actions += '<button class="btn btn-danger" title="Kill agent, close task, clean up" onclick="doAction(\'drop\',\'' + esc(t.id) + '\')">drop</button>';
@@ -844,6 +852,7 @@
     if (action === 'grant') placeholder = 'e.g. figma console, supabase';
     else if (action === 'reject-plan') placeholder = 'What should the planner change?';
     else if (action === 'reject-investigation') placeholder = 'What else should be investigated?';
+    else if (action === 'retry') placeholder = 'Give the agent specific guidance for the retry...';
     document.getElementById('modalInput').placeholder = placeholder;
     document.getElementById('modalOverlay').classList.add('active');
     setTimeout(function() { document.getElementById('modalInput').focus(); }, 100);

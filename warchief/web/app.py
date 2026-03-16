@@ -327,6 +327,38 @@ async def nudge_task(task_id: str, body: ActionBody):
         return {"error": str(exc)}
 
 
+@app.post("/api/retry/{task_id}")
+async def retry_task(task_id: str, body: ActionBody):
+    """Retry a blocked/closed task — reopen with feedback at development stage."""
+    store = _store()
+    task = store.get_task(task_id)
+    if not task:
+        return {"error": f"Task '{task_id}' not found"}
+
+    # Store feedback
+    if body.message:
+        store.create_message(MessageRecord(
+            id="", from_agent="user", to_agent=task_id,
+            message_type="feedback", body=body.message, persistent=True,
+        ))
+
+    # Reset counters and reopen at development
+    from warchief.state_machine import get_first_stage
+    first_stage = "development"  # Always retry from dev, not planning
+    store.update_task(
+        task_id, status="open", stage=first_stage,
+        assigned_agent=None, spawn_count=0, crash_count=0,
+        labels=[f"stage:{first_stage}"],
+    )
+    store.log_event(EventRecord(
+        event_type="retry",
+        task_id=task_id,
+        details={"feedback": body.message, "stage": first_stage},
+        actor="user",
+    ))
+    return {"ok": True}
+
+
 @app.post("/api/tell/{task_id}")
 async def tell_task(task_id: str, body: ActionBody):
     from warchief.control import _do_tell
