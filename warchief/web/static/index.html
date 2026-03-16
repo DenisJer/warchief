@@ -332,11 +332,16 @@
 <body>
 
 <div class="header">
-  <div style="display:flex;align-items:center">
+  <div style="display:flex;align-items:center;gap:16px">
     <h1>Warchief</h1>
+    <nav style="display:flex;gap:8px;font-size:13px">
+      <a href="/" style="color:#FFD100;border-bottom:2px solid #FFD100;padding-bottom:2px">Dashboard</a>
+      <a href="/agents" style="color:#888;padding-bottom:2px">Agents</a>
+    </nav>
     <span id="pausedBadge" class="paused-badge" style="display:none">PAUSED</span>
   </div>
   <div class="stats">
+    <button class="btn btn-primary" onclick="openCreateModal()" style="margin-right:8px;padding:4px 12px">+ New Task</button>
     <span><span class="conn-dot" id="connDot"></span><span id="connText">Connecting...</span></span>
     <span>Tasks: <span class="val" id="statTotal">0</span></span>
     <span>Active: <span class="val" id="statActive">0</span></span>
@@ -384,6 +389,37 @@
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" id="modalSubmit" onclick="submitModal()">Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create Task Modal -->
+<div class="modal-overlay" id="createOverlay">
+  <div class="modal" style="min-width:500px">
+    <h3>New Task</h3>
+    <input type="text" id="createTitle" placeholder="Task title (required)" />
+    <textarea id="createDesc" placeholder="Description (optional)" style="width:100%;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:8px 12px;border-radius:4px;font-size:14px;margin-bottom:12px;min-height:60px;resize:vertical;font-family:inherit"></textarea>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <select id="createType" style="flex:1;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:6px 8px;border-radius:4px;font-size:13px">
+        <option value="feature">Feature</option>
+        <option value="bug">Bug</option>
+        <option value="investigation">Investigation</option>
+      </select>
+      <input type="number" id="createPriority" value="5" min="1" max="10" style="width:80px;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:6px 8px;border-radius:4px;font-size:13px" placeholder="Priority" />
+    </div>
+    <div id="createAdvanced" style="display:none">
+      <input type="text" id="createLabels" placeholder="Labels (comma-separated)" style="margin-bottom:8px" />
+      <input type="text" id="createDeps" placeholder="Dependencies (task IDs, comma-separated)" style="margin-bottom:8px" />
+      <input type="text" id="createTools" placeholder="MCP tools (e.g. figma console, supabase)" style="margin-bottom:8px" />
+      <input type="number" id="createBudget" value="0" step="0.5" min="0" style="width:120px;background:#1a1a2e;border:1px solid #2a2a4a;color:#e0e0e0;padding:6px 8px;border-radius:4px;font-size:13px" placeholder="Budget $" />
+      <span style="font-size:11px;color:#666;margin-left:6px">Budget $ (0 = default)</span>
+    </div>
+    <div style="margin-bottom:12px">
+      <a href="#" onclick="document.getElementById('createAdvanced').style.display=document.getElementById('createAdvanced').style.display==='none'?'block':'none';return false" style="font-size:12px;color:#85c1e9">Advanced options</a>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeCreateModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitCreate()">Create Task</button>
     </div>
   </div>
 </div>
@@ -633,9 +669,54 @@
     if (e.key === 'Escape') closeModal();
   });
 
-  // Escape key to close modal
+  // Escape key to close modals
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Escape') { closeModal(); closeCreateModal(); }
+  });
+
+  // Create task modal
+  function openCreateModal() {
+    actionInProgress = true;
+    document.getElementById('createOverlay').classList.add('active');
+    setTimeout(function() { document.getElementById('createTitle').focus(); }, 100);
+  }
+
+  function closeCreateModal() {
+    document.getElementById('createOverlay').classList.remove('active');
+    actionInProgress = false;
+    if (state) render(state);
+  }
+
+  async function submitCreate() {
+    var title = document.getElementById('createTitle').value.trim();
+    if (!title) { document.getElementById('createTitle').style.borderColor = '#8C1616'; return; }
+    var body = {
+      title: title,
+      description: document.getElementById('createDesc').value.trim(),
+      type: document.getElementById('createType').value,
+      priority: parseInt(document.getElementById('createPriority').value) || 5,
+      labels: document.getElementById('createLabels').value.trim(),
+      deps: document.getElementById('createDeps').value.trim(),
+      tools: document.getElementById('createTools').value.trim(),
+      budget: parseFloat(document.getElementById('createBudget').value) || 0,
+    };
+    var r = await apiPost('/api/create', body);
+    if (r.error) { window.alert('Error: ' + r.error); return; }
+    // Reset form
+    document.getElementById('createTitle').value = '';
+    document.getElementById('createDesc').value = '';
+    document.getElementById('createType').value = 'feature';
+    document.getElementById('createPriority').value = '5';
+    document.getElementById('createLabels').value = '';
+    document.getElementById('createDeps').value = '';
+    document.getElementById('createTools').value = '';
+    document.getElementById('createBudget').value = '0';
+    closeCreateModal();
+  }
+
+  // Enter in create title submits
+  document.getElementById('createTitle').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') submitCreate();
   });
 
   // Start

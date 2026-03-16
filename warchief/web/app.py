@@ -167,6 +167,17 @@ class ActionBody(BaseModel):
     message: str = ""
 
 
+class CreateTaskBody(BaseModel):
+    title: str
+    description: str = ""
+    type: str = "feature"
+    priority: int = 5
+    labels: str = ""
+    deps: str = ""
+    tools: str = ""
+    budget: float = 0.0
+
+
 @app.post("/api/answer/{task_id}")
 async def answer_task(task_id: str, body: ActionBody):
     store = _store()
@@ -290,6 +301,113 @@ async def tell_task(task_id: str, body: ActionBody):
         return {"ok": True}
     except Exception as exc:
         return {"error": str(exc)}
+
+
+@app.post("/api/create")
+async def create_task(body: CreateTaskBody):
+    from warchief.models import TaskRecord
+    import uuid
+
+    task_id = f"wc-{uuid.uuid4().hex[:6]}"
+    now = time.time()
+    labels_list = [l.strip() for l in body.labels.split(",") if l.strip()]
+    deps_list = [d.strip() for d in body.deps.split(",") if d.strip()]
+    tools_list = [t.strip() for t in body.tools.split(",") if t.strip()]
+
+    store = _store()
+    try:
+        record = TaskRecord(
+            id=task_id,
+            title=body.title,
+            description=body.description,
+            status="open",
+            labels=labels_list,
+            deps=deps_list,
+            priority=body.priority,
+            type=body.type,
+            extra_tools=tools_list,
+            budget=body.budget,
+            created_at=now,
+            updated_at=now,
+        )
+        store.create_task(record)
+        return {"ok": True, "task_id": task_id}
+    finally:
+        store.close()
+
+
+@app.get("/api/agents")
+async def list_agents():
+    """List all agents with metadata for the agents page."""
+    store = _store()
+    try:
+        agents = store.get_running_agents()
+        # Also get recently dead agents from DB
+        all_agents_rows = store._conn.execute(
+            "SELECT * FROM agents ORDER BY spawned_at DESC LIMIT 50"
+        ).fetchall()
+        from warchief.task_store import _row_to_agent
+        all_agents = [_row_to_agent(r) for r in all_agents_rows]
+
+        now = time.time()
+        result = []
+        for a in all_agents:
+            age = format_duration(now - a.spawned_at) if a.spawned_at else ""
+            result.append({
+                "id": a.id,
+                "role": a.role,
+                "status": a.status,
+                "task": a.current_task or "",
+                "model": a.model or "",
+                "age": age,
+                "spawned_at": a.spawned_at or 0,
+            })
+        return result
+    finally:
+        store.close()
+
+
+@app.get("/api/agent-log/{agent_id}")
+async def get_agent_log(agent_id: str, lines: int = 200):
+    """Get agent log content (last N lines)."""
+    log_path = _project_root / ".warchief" / "agent-logs" / f"{agent_id}.log"
+    if not log_path.exists():
+        return {"lines": [], "exists": False}
+    try:
+        content = log_path.read_text()
+        all_lines = content.strip().split("\n")
+        return {"lines": all_lines[-lines:], "exists": True, "total": len(all_lines)}
+    except OSError:
+        return {"lines": [], "exists": False}
+
+
+@app.get("/api/agent-file")
+async def get_agent_file(path: str):
+    """Read a file from an agent's worktree. Only serves files under .warchief-worktrees/."""
+    from pathlib import PurePosixPath
+    safe_path = Path(path).resolve()
+    worktrees_dir = (_project_root / ".warchief-worktrees").resolve()
+    # Security: only serve files from worktrees directory
+    if not str(safe_path).startswith(str(worktrees_dir)):
+        return {"error": "Access denied — only worktree files allowed"}
+    if not safe_path.exists():
+        return {"error": "File not found (worktree may have been cleaned up)"}
+    if safe_path.is_dir():
+        return {"error": "Path is a directory"}
+    try:
+        content = safe_path.read_text(errors="replace")
+        # Cap at 50KB
+        if len(content) > 50_000:
+            content = content[:50_000] + "\n\n... (truncated at 50KB)"
+        return {"content": content, "path": str(safe_path), "size": safe_path.stat().st_size}
+    except OSError as e:
+        return {"error": str(e)}
+
+
+@app.get("/agents", response_class=HTMLResponse)
+async def agents_page():
+    agents_path = _static_dir / "agents.html"
+    return HTMLResponse(content=agents_path.read_text(), status_code=200)
 
 
 @app.websocket("/ws")
