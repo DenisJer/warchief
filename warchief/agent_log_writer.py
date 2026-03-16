@@ -91,7 +91,12 @@ def stream_to_readable(input_stream=None, output_stream=None) -> None:
             if usage:
                 in_tok = usage.get("input_tokens", 0)
                 out_tok = usage.get("output_tokens", 0)
-                out.write(f" (tokens: {in_tok:,} in / {out_tok:,} out)")
+                cache_r = usage.get("cache_read_input_tokens", 0)
+                cache_w = usage.get("cache_creation_input_tokens", 0)
+                out.write(f" (tokens: {in_tok:,} in / {out_tok:,} out")
+                if cache_r or cache_w:
+                    out.write(f" / {cache_r:,} cache_r / {cache_w:,} cache_w")
+                out.write(")")
             out.write("\n")
             out.flush()
 
