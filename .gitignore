@@ -16,6 +16,9 @@ dist/
 build/
 .venv/
 
+# Frontend (built output is committed, source node_modules is not)
+warchief/web/frontend/node_modules/
+
 # OS / IDE
 .DS_Store
 .pytest_cache/

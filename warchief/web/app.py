@@ -199,15 +199,8 @@ def _build_state() -> dict:
 
 app = FastAPI(title="Warchief Dashboard")
 
-# Mount static files
+# Static files directory (Vue SPA build output)
 _static_dir = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
-
-
-@app.get("/", response_class=HTMLResponse)
-async def index():
-    index_path = _static_dir / "index.html"
-    return HTMLResponse(content=index_path.read_text(), status_code=200)
 
 
 @app.get("/api/state")
@@ -766,16 +759,6 @@ async def get_agent_file(path: str):
         return {"error": str(e)}
 
 
-@app.get("/agents", response_class=HTMLResponse)
-async def agents_page():
-    agents_path = _static_dir / "agents.html"
-    return HTMLResponse(content=agents_path.read_text(), status_code=200)
-
-
-@app.get("/tasks", response_class=HTMLResponse)
-async def tasks_page():
-    tasks_path = _static_dir / "tasks.html"
-    return HTMLResponse(content=tasks_path.read_text(), status_code=200)
 
 
 @app.get("/api/tasks")
@@ -848,6 +831,20 @@ async def websocket_endpoint(ws: WebSocket):
         pass
     except Exception:
         pass
+
+
+# Mount static assets (JS, CSS) from Vue build
+if (_static_dir / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(_static_dir / "assets")), name="assets")
+
+
+# SPA catch-all — serves index.html for all non-API routes (Vue Router handles routing)
+@app.get("/{path:path}", response_class=HTMLResponse)
+async def spa_catchall(path: str):
+    index_path = _static_dir / "index.html"
+    if index_path.exists():
+        return HTMLResponse(content=index_path.read_text(), status_code=200)
+    return HTMLResponse(content="<h1>Dashboard not built. Run: cd warchief/web/frontend && npm run build</h1>", status_code=500)
 
 
 def run_server(project_root: Path, port: int = 8095) -> None:
