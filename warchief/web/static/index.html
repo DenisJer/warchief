@@ -548,9 +548,21 @@
       const tasksHtml = stage.tasks.length ? stage.tasks.map(function(t) {
         const statusCls = 'status status-' + t.status;
         const agentStr = t.agent_id ? '<span style="color:#85c1e9;font-size:10px">' + esc(t.agent_id) + '</span>' : '';
+        // Determine blocked reason from labels
+        var blockedReason = '';
+        if (t.status === 'blocked' && t.labels) {
+          if (t.labels.indexOf('needs-plan-approval') >= 0) blockedReason = 'Waiting for your plan approval';
+          else if (t.labels.indexOf('needs-review') >= 0) blockedReason = 'Waiting for your review of findings';
+          else if (t.labels.indexOf('question') >= 0) blockedReason = 'Agent has a question for you';
+          else if (t.labels.indexOf('budget-exceeded') >= 0) blockedReason = 'Budget limit exceeded — approve more or drop';
+          else if (t.labels.indexOf('decomposed') >= 0) blockedReason = 'Decomposed into sub-tasks';
+          else if (t.labels.indexOf('needs-testing') >= 0) blockedReason = 'Waiting for manual test approval';
+          else blockedReason = 'Blocked — check events for details';
+        }
         return '<div class="task-card">' +
           '<div class="task-id">' + esc(t.id) + '</div>' +
           '<div class="task-title">' + esc(t.title) + '</div>' +
+          (blockedReason ? '<div style="margin-top:4px;padding:4px 8px;background:#2a1a0a;border-left:3px solid #f0b27a;border-radius:0 3px 3px 0;font-size:11px;color:#f0b27a">' + esc(blockedReason) + '</div>' : '') +
           '<div class="task-meta"><span class="' + statusCls + '">' + esc(t.status) + '</span>' +
           (t.labels && t.labels.indexOf('budget-exceeded') >= 0 ? '<span class="status" style="background:#8C1616;color:#FFD100">$OVER</span>' : '') +
           '<span>' + esc(t.age) + '</span></div>' +

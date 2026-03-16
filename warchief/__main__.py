@@ -899,8 +899,8 @@ def cmd_drop(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
 
-    # Close the task and clear stage so it disappears from pipeline
-    store.update_task(task.id, status="closed", stage=None, assigned_agent=None)
+    # Close the task, clear stage and labels so it disappears from pipeline and questions
+    store.update_task(task.id, status="closed", stage=None, assigned_agent=None, labels=[])
 
     # Clean up agent log files for this task
     logs_dir = _warchief_root() / "agent-logs"

@@ -41,7 +41,8 @@ def _build_state() -> dict:
         metrics = compute_pipeline_metrics(store)
         config = read_config(_project_root)
         events = store.get_events(limit=20)
-        question_tasks = store.list_tasks(has_label="question")
+        all_question_tasks = store.list_tasks(has_label="question")
+        question_tasks = [t for t in all_question_tasks if t.status != "closed"]
 
         question_data: list[dict] = []
         for qt in question_tasks:
@@ -257,7 +258,7 @@ async def drop_task(task_id: str):
 
         # Force-update bypassing optimistic lock (watcher may be touching the same task)
         store._conn.execute(
-            "UPDATE tasks SET status = 'closed', stage = NULL, assigned_agent = NULL, updated_at = ? WHERE id = ?",
+            "UPDATE tasks SET status = 'closed', stage = NULL, assigned_agent = NULL, labels = '[]', updated_at = ? WHERE id = ?",
             (time.time(), task_id),
         )
         store._conn.execute(
