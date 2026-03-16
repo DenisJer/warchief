@@ -328,5 +328,12 @@ def run_server(project_root: Path, port: int = 8095) -> None:
         print(f"Error: Could not find an available port (tried {port - 20} to {port - 1})", file=__import__('sys').stderr)
         return
 
-    print(f"Warchief Web Dashboard: http://localhost:{port}")
+    url = f"http://localhost:{port}"
+    print(f"Warchief Web Dashboard: {url}")
+
+    # Open browser after a short delay (so server is ready)
+    import threading
+    import webbrowser
+    threading.Timer(1.0, webbrowser.open, args=[url]).start()
+
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
