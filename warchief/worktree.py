@@ -33,6 +33,21 @@ def create_branch_worktree(
         log.warning("Worktree already exists at %s, reusing", wt_path)
         return wt_path
 
+    # Ensure main repo is not on the feature branch (would block worktree creation)
+    try:
+        current = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=project_root, capture_output=True, text=True, timeout=5,
+        )
+        if current.stdout.strip() == branch_name:
+            log.warning("Main repo is on %s — switching to %s", branch_name, base_branch)
+            subprocess.run(
+                ["git", "checkout", base_branch],
+                cwd=project_root, capture_output=True, timeout=10,
+            )
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
     # Create the branch if it doesn't exist
     try:
         subprocess.run(
