@@ -781,6 +781,57 @@ class Watcher:
 
     # ── Cost tracking ──────────────────────────────────────────
 
+    def _cleanup_completed_task(self, task: TaskRecord) -> None:
+        """Clean up all resources for a completed task.
+
+        Removes worktrees, sessions, and ensures the main repo
+        is on the default branch (not stuck on a feature branch).
+        """
+        task_branch = get_task_branch(task)
+
+        # Remove all worktrees for agents that worked on this task
+        from warchief.worktree import list_worktrees
+        worktree_ids = list_worktrees(self.project_root)
+        agents_rows = self.store._conn.execute(
+            "SELECT id, worktree_path FROM agents WHERE current_task = ?",
+            (task.id,),
+        ).fetchall()
+        task_agent_ids = {row[0] for row in agents_rows}
+
+        for wt_id in worktree_ids:
+            if wt_id in task_agent_ids:
+                try:
+                    remove_worktree(self.project_root, wt_id)
+                    log.info("Cleaned up worktree %s for completed task %s", wt_id, task.id)
+                except Exception as e:
+                    log.warning("Failed to remove worktree %s: %s", wt_id, e)
+
+        # Remove saved sessions for this task
+        sessions_dir = self.project_root / ".warchief" / "sessions"
+        if sessions_dir.exists():
+            for sf in sessions_dir.glob(f"{task.id}-*.session"):
+                sf.unlink(missing_ok=True)
+
+        # Ensure main repo is not checked out on the feature branch
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=self.project_root, capture_output=True, text=True, timeout=5,
+            )
+            current_branch = result.stdout.strip()
+            if current_branch == task_branch:
+                base = task.base_branch or self.config.base_branch or _default_branch(self.project_root)
+                subprocess.run(
+                    ["git", "checkout", base],
+                    cwd=self.project_root, capture_output=True, timeout=10,
+                )
+                log.info("Switched main repo back to %s (was on %s)", base, task_branch)
+        except (subprocess.TimeoutExpired, OSError) as e:
+            log.warning("Failed to check/switch branch: %s", e)
+
+        self._emit(f"Cleaned up completed task {task.id}")
+
     def _record_agent_cost(self, agent: AgentRecord) -> None:
         """Read the .usage.json file written by the agent log writer and persist cost data."""
         usage_path = self.project_root / ".warchief" / "agent-logs" / f"{agent.id}.usage.json"
@@ -1049,6 +1100,10 @@ class Watcher:
         # Check for auto-decomposition signal from planner
         if task.stage == "planning" and agent.role == "planner":
             self._check_decompose(task, agent)
+
+        # Task completed — clean up all worktrees, sessions, and restore git state
+        if result.status == "closed":
+            self._cleanup_completed_task(task)
 
         # Handle post-testing — if tester passed and there are frontend files,
         # optionally block for manual e2e Playwright testing
