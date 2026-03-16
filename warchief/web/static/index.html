@@ -337,6 +337,7 @@
 <div class="header">
   <div style="display:flex;align-items:center;gap:16px">
     <h1>Warchief</h1>
+    <span id="projectName" style="color:#85c1e9;font-size:13px;font-weight:normal" title=""></span>
     <nav style="display:flex;gap:8px;font-size:13px">
       <a href="/" style="color:#FFD100;border-bottom:2px solid #FFD100;padding-bottom:2px">Dashboard</a>
       <a href="/agents" style="color:#888;padding-bottom:2px">Agents</a>
@@ -534,7 +535,12 @@
   }
 
   function render(s) {
-    // Header stats
+    // Project name + header stats
+    if (s.project) {
+      document.getElementById('projectName').textContent = s.project;
+      document.getElementById('projectName').title = s.project_path || '';
+      document.title = 'Warchief — ' + s.project;
+    }
     document.getElementById('statTotal').textContent = s.metrics.total;
     document.getElementById('statActive').textContent = s.metrics.in_progress;
     document.getElementById('statBlocked').textContent = s.metrics.blocked;

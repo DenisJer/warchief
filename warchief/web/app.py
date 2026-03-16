@@ -124,6 +124,8 @@ def _build_state() -> dict:
 
     return {
         "timestamp": now,
+        "project": _project_root.name,
+        "project_path": str(_project_root),
         "paused": config.paused,
         "metrics": {
             "total": metrics.total_tasks,

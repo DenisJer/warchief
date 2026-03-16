@@ -204,6 +204,7 @@
 <div class="header">
   <div style="display:flex;align-items:center;gap:16px">
     <h1>Warchief</h1>
+    <span id="projectName" style="color:#85c1e9;font-size:13px;font-weight:normal" title=""></span>
     <nav>
       <a href="/">Dashboard</a>
       <a href="/agents" class="active">Agents</a>
@@ -415,6 +416,15 @@
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closeFileViewer();
   });
+
+  // Load project name
+  fetch('/api/state').then(function(r){return r.json()}).then(function(s){
+    if(s.project){
+      document.getElementById('projectName').textContent=s.project;
+      document.getElementById('projectName').title=s.project_path||'';
+      document.title='Warchief — '+s.project+' — Agents';
+    }
+  }).catch(function(){});
 
   // Initial load + poll every 3s
   poll();
