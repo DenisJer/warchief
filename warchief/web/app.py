@@ -603,14 +603,35 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 def run_server(project_root: Path, port: int = 8095) -> None:
-    """Start the uvicorn server."""
+    """Start the uvicorn server.
+
+    Only one web dashboard per project. If another is already running,
+    prints its URL and exits. Different projects can run on different ports.
+    """
     global _project_root, _session_start, _shared_store
     _project_root = project_root
     _session_start = time.time()
-    _shared_store = TaskStore(_project_root / ".warchief" / "warchief.db")
 
+    import fcntl
     import socket
     import uvicorn
+
+    # One dashboard per project — lock file prevents duplicates
+    lock_path = project_root / ".warchief" / "dashboard.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lock_fd = open(lock_path, "w")
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, BlockingIOError):
+        # Another dashboard is running — try to read its port
+        try:
+            existing_port = lock_path.read_text().strip()
+            print(f"Dashboard already running for this project: http://localhost:{existing_port}")
+        except OSError:
+            print("Dashboard already running for this project.")
+        return
+
+    _shared_store = TaskStore(_project_root / ".warchief" / "warchief.db")
 
     # Auto-find available port starting from requested port
     for attempt in range(20):
@@ -623,7 +644,11 @@ def run_server(project_root: Path, port: int = 8095) -> None:
             port += 1
     else:
         print(f"Error: Could not find an available port (tried {port - 20} to {port - 1})", file=__import__('sys').stderr)
+        lock_fd.close()
         return
+
+    # Write port to lock file so other instances can show the URL
+    lock_path.write_text(str(port))
 
     url = f"http://localhost:{port}"
     print(f"Warchief Web Dashboard: {url}")
@@ -633,4 +658,13 @@ def run_server(project_root: Path, port: int = 8095) -> None:
     import webbrowser
     threading.Timer(1.0, webbrowser.open, args=[url]).start()
 
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    finally:
+        # Release lock on shutdown
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
+            lock_path.unlink(missing_ok=True)
+        except OSError:
+            pass
