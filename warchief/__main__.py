@@ -506,6 +506,7 @@ def cmd_watch(_args: argparse.Namespace) -> None:
     from warchief.watcher import Watcher
 
     project_root = Path.cwd()
+    _ensure_gitignore(project_root)
     setup_logging(project_root)
     config = read_config(project_root)
     registry = RoleRegistry(Path(__file__).parent / "roles")
@@ -606,6 +607,7 @@ def cmd_kill_agent(args: argparse.Namespace) -> None:
 
 def cmd_start(args: argparse.Namespace) -> None:
     _ensure_initialized()
+    _ensure_gitignore(Path.cwd())
 
     # Launch tmux UI if available and not opted out
     no_tmux = getattr(args, "no_tmux", False)
@@ -1194,6 +1196,7 @@ def cmd_connect(args: argparse.Namespace) -> None:
 
 def cmd_dashboard(args: argparse.Namespace) -> None:
     _ensure_initialized()
+    _ensure_gitignore(Path.cwd())
     if getattr(args, "web", False):
         try:
             from warchief.web.app import run_server
