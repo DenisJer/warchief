@@ -118,6 +118,9 @@ def build_claude_command(
         "- NEVER push to main/master — only work on feature branches\n"
         "- NEVER run `git push` to any remote\n"
         "- Be concise in output — avoid lengthy explanations, just write code and signal completion\n"
+        "- NEVER `git add -A` or `git add .` — always list specific files\n"
+        "- NEVER commit .claude/, .warchief/, .claudeignore, CLAUDE.md, debug/ files\n"
+        "- Make exactly ONE commit with all your changes, not multiple commits\n"
     )
 
     # Dynamic task details
@@ -143,11 +146,13 @@ def build_claude_command(
     if role_name == "developer":
         task_prompt += (
             "\n## CRITICAL: Before you exit, you MUST do these three things:\n"
-            "### Step 1: Commit your work\n"
-            "IMPORTANT: Only `git add` the specific files YOU created or modified.\n"
-            "NEVER use `git add -A` or `git add .` — this will commit junk files.\n"
+            "### Step 1: Commit your work (ONE commit only)\n"
+            "IMPORTANT: Only `git add` the specific source files YOU created or modified.\n"
+            "NEVER use `git add -A`, `git add .`, or `git add --all` — these commit junk files.\n"
+            "NEVER commit: .claude/, .warchief/, .claudeignore, CLAUDE.md, debug/, *.log\n"
+            "Make exactly ONE commit with all your changes:\n"
             "```bash\n"
-            "git add <file1> <file2> ...  # Only YOUR files\n"
+            "git add <file1> <file2> ...  # List ONLY your source files explicitly\n"
             "git commit -m 'feat: <descriptive message>'\n"
             "```\n"
             "### Step 2: Write handoff notes\n"

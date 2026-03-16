@@ -41,6 +41,9 @@ def install_agent_hooks(
     # Ensure heavy directories are never scanned by the agent
     _write_claudeignore(worktree_path)
 
+    # Ensure warchief artifacts are never committed
+    _write_worktree_gitignore(worktree_path)
+
     # Write the hook scripts
     _write_verify_task_hook(hooks_dir)
 
@@ -153,6 +156,37 @@ if __name__ == "__main__":
     hook_path = hooks_dir / "verify_task_updated.py"
     hook_path.write_text(script)
     hook_path.chmod(0o755)
+
+
+def _write_worktree_gitignore(worktree_path: Path) -> None:
+    """Ensure .gitignore in worktree blocks warchief/claude artifacts from commits."""
+    gitignore_path = worktree_path / ".gitignore"
+    warchief_entries = [".claude/", ".warchief/", ".warchief-worktrees/", ".claudeignore", "debug/", "CLAUDE.md"]
+
+    existing_lines: list[str] = []
+    if gitignore_path.exists():
+        try:
+            existing_lines = gitignore_path.read_text().splitlines()
+        except OSError:
+            pass
+
+    existing_set = set()
+    for line in existing_lines:
+        stripped = line.strip()
+        existing_set.add(stripped)
+        existing_set.add(stripped.rstrip("/"))
+        existing_set.add(stripped.rstrip("/") + "/")
+
+    missing = [e for e in warchief_entries if e not in existing_set]
+    if not missing:
+        return
+
+    with open(gitignore_path, "a") as f:
+        if existing_lines and existing_lines[-1] != "":
+            f.write("\n")
+        f.write("# Warchief artifacts — do NOT commit\n")
+        for entry in missing:
+            f.write(entry + "\n")
 
 
 def _write_claudeignore(worktree_path: Path) -> None:
