@@ -195,14 +195,23 @@ def remove_worktree(project_root: Path, agent_id: str) -> None:
         log.debug("Worktree %s already removed", wt_path)
         return
 
-    subprocess.run(
+    result = subprocess.run(
         ["git", "worktree", "remove", "--force", str(wt_path)],
-        cwd=project_root, capture_output=True,
+        cwd=project_root, capture_output=True, text=True,
     )
+    if result.returncode != 0:
+        log.warning("git worktree remove failed for %s: %s", wt_path, result.stderr.strip())
     subprocess.run(
         ["git", "worktree", "prune"],
         cwd=project_root, capture_output=True,
     )
+    # If git didn't fully clean up the directory, remove it manually
+    if wt_path.exists():
+        import shutil
+        try:
+            shutil.rmtree(wt_path)
+        except OSError as e:
+            log.warning("Failed to remove worktree directory %s: %s", wt_path, e)
     log.info("Removed worktree: %s", wt_path)
 
 
