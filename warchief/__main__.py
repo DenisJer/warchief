@@ -499,7 +499,7 @@ def cmd_config(args: argparse.Namespace) -> None:
     print(f"Set {args.key} = {args.value}")
 
 
-def cmd_watch(_args: argparse.Namespace) -> None:
+def cmd_watch(args: argparse.Namespace) -> None:
     _ensure_initialized()
     from warchief.config import read_config, setup_logging
     from warchief.roles import RoleRegistry
@@ -1535,7 +1535,6 @@ def build_parser() -> argparse.ArgumentParser:
                          help="Skip conductor decomposition, create a single task")
     p_start.add_argument("--no-tmux", action="store_true",
                          help="Run without tmux UI (plain terminal mode)")
-
     sub.add_parser("watch", help="Watch the pipeline")
     sub.add_parser("board", help="Show task board")
     sub.add_parser("stop", help="Stop the pipeline")

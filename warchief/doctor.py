@@ -364,6 +364,151 @@ def check_log_file(project_root: Path) -> CheckResult:
     return CheckResult("log_file", True, f"Log file: {size_mb:.1f} MB")
 
 
+def check_node() -> CheckResult:
+    """Check that Node.js and npm/npx are installed."""
+    node_path = shutil.which("node")
+    if not node_path:
+        return CheckResult(
+            "node", False,
+            "Node.js not found on PATH — install from https://nodejs.org/ "
+            "(required for frontend projects)",
+            "warning",
+        )
+    try:
+        result = subprocess.run(
+            ["node", "--version"],
+            capture_output=True, text=True, timeout=5,
+        )
+        version = result.stdout.strip()
+
+        # Check npm too
+        npm_path = shutil.which("npm")
+        npx_path = shutil.which("npx")
+        extras = []
+        if npm_path:
+            npm_ver = subprocess.run(
+                ["npm", "--version"], capture_output=True, text=True, timeout=5,
+            ).stdout.strip()
+            extras.append(f"npm {npm_ver}")
+        else:
+            extras.append("npm NOT FOUND")
+        if npx_path:
+            extras.append("npx OK")
+        else:
+            extras.append("npx NOT FOUND")
+
+        return CheckResult("node", True, f"Node {version} ({', '.join(extras)})")
+    except (subprocess.TimeoutExpired, OSError):
+        return CheckResult("node", True, f"Node found at {node_path} (version check timed out)")
+
+
+def check_playwright(project_root: Path) -> CheckResult:
+    """Check Playwright CLI availability and browser installation."""
+    npx_path = shutil.which("npx")
+    if not npx_path:
+        return CheckResult("playwright", False, "npx not found — cannot run Playwright", "info")
+
+    # Check if project uses Playwright (config file exists)
+    pw_config_names = [
+        "playwright.config.ts", "playwright.config.js",
+        "playwright.config.mjs", "playwright.config.cjs",
+    ]
+    has_config = any((project_root / cfg).exists() for cfg in pw_config_names)
+
+    # Check if playwright is in project dependencies
+    has_dep = False
+    pkg_json = project_root / "package.json"
+    if pkg_json.exists():
+        try:
+            import json
+            pkg = json.loads(pkg_json.read_text())
+            all_deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+            has_dep = "@playwright/test" in all_deps or "playwright" in all_deps
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    if not has_config and not has_dep:
+        return CheckResult("playwright", True, "Not used in this project", )
+
+    # Check if Playwright CLI works
+    try:
+        result = subprocess.run(
+            ["npx", "playwright", "--version"],
+            cwd=project_root, capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return CheckResult(
+                "playwright", False,
+                "Playwright CLI failed — run 'npm install' in your project",
+                "warning",
+            )
+        pw_version = result.stdout.strip().split("\n")[0]
+    except (subprocess.TimeoutExpired, OSError):
+        return CheckResult(
+            "playwright", False,
+            "Playwright CLI check timed out",
+            "warning",
+        )
+
+    # Check if browsers are installed
+    browsers_installed = False
+
+    # Method 1: Check common browser cache locations
+    cache_dirs = [
+        Path.home() / ".cache" / "ms-playwright",           # Linux
+        Path.home() / "Library" / "Caches" / "ms-playwright",  # macOS
+        Path.home() / "AppData" / "Local" / "ms-playwright",   # Windows
+    ]
+    for cache_dir in cache_dirs:
+        if cache_dir.exists() and any(cache_dir.iterdir()):
+            browsers_installed = True
+            break
+
+    # Method 2: Check node_modules/.cache/ms-playwright (project-local)
+    if not browsers_installed:
+        local_cache = project_root / "node_modules" / ".cache" / "ms-playwright"
+        if local_cache.exists() and any(local_cache.iterdir()):
+            browsers_installed = True
+
+    if not browsers_installed:
+        return CheckResult(
+            "playwright", False,
+            f"Playwright {pw_version} found but browsers NOT installed — "
+            f"run 'npx playwright install' to download browser binaries",
+            "warning",
+        )
+
+    return CheckResult(
+        "playwright", True,
+        f"Playwright {pw_version} with browsers installed",
+    )
+
+
+def check_test_frameworks(project_root: Path) -> CheckResult:
+    """Detect test frameworks configured in the project."""
+    from warchief.test_runner import detect_test_commands
+    detected = detect_test_commands(project_root)
+
+    parts = []
+    if detected.test_command:
+        parts.append(f"unit: '{detected.test_command}'")
+    if detected.e2e_command:
+        parts.append(f"e2e: '{detected.e2e_command}'")
+
+    if not parts:
+        return CheckResult(
+            "test_frameworks", False,
+            "No test framework detected — tester agent will set one up",
+            "info",
+        )
+
+    source = f" (from {detected.source})" if detected.source else ""
+    return CheckResult(
+        "test_frameworks", True,
+        f"Detected: {', '.join(parts)}{source}",
+    )
+
+
 def run_doctor(project_root: Path) -> HealthReport:
     """Run all health checks and return a report."""
     report = HealthReport()
@@ -371,9 +516,14 @@ def run_doctor(project_root: Path) -> HealthReport:
     # Environment checks (no DB needed)
     report.checks.append(check_claude_cli())
     report.checks.append(check_gh_cli())
-    report.checks.append(check_tmux())
     report.checks.append(check_git(project_root))
     report.checks.append(check_git_user(project_root))
+    report.checks.append(check_node())
+    report.checks.append(check_tmux())
+
+    # Project-specific checks
+    report.checks.append(check_playwright(project_root))
+    report.checks.append(check_test_frameworks(project_root))
 
     # Warchief state checks
     report.checks.append(check_warchief_dir(project_root))

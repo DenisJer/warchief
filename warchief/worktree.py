@@ -30,8 +30,15 @@ def create_branch_worktree(
     wt_path = root / agent_id
 
     if wt_path.exists():
-        log.warning("Worktree already exists at %s, reusing", wt_path)
-        return wt_path
+        # Only reuse if it's a real git worktree (has .git file)
+        if (wt_path / ".git").exists():
+            log.warning("Worktree already exists at %s, reusing", wt_path)
+            return wt_path
+        else:
+            # Broken directory from previous failed attempt — remove it
+            log.warning("Removing broken worktree directory at %s", wt_path)
+            import shutil
+            shutil.rmtree(wt_path, ignore_errors=True)
 
     # Ensure main repo is not on the feature branch (would block worktree creation)
     try:
@@ -58,6 +65,14 @@ def create_branch_worktree(
     except subprocess.CalledProcessError:
         branch_exists = False
 
+    def _run_git_worktree(cmd):
+        """Run git worktree command with error logging."""
+        result = subprocess.run(cmd, cwd=project_root, capture_output=True, text=True)
+        if result.returncode != 0:
+            log.error("git worktree failed: %s\nstderr: %s", " ".join(cmd), result.stderr.strip())
+            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+        return result
+
     if branch_exists:
         # Check if branch is already checked out in another worktree
         result = subprocess.run(
@@ -67,24 +82,13 @@ def create_branch_worktree(
         branch_in_use = f"branch refs/heads/{branch_name}" in result.stdout
 
         if branch_in_use:
-            # Remove the stale worktree that has this branch, then check out fresh
             log.warning("Branch %s checked out elsewhere, cleaning up stale worktree", branch_name)
             _remove_stale_worktree_for_branch(project_root, branch_name, result.stdout)
-            # Now the branch is free — check it out normally
-            subprocess.run(
-                ["git", "worktree", "add", str(wt_path), branch_name],
-                cwd=project_root, check=True, capture_output=True,
-            )
+            _run_git_worktree(["git", "worktree", "add", str(wt_path), branch_name])
         else:
-            subprocess.run(
-                ["git", "worktree", "add", str(wt_path), branch_name],
-                cwd=project_root, check=True, capture_output=True,
-            )
+            _run_git_worktree(["git", "worktree", "add", str(wt_path), branch_name])
     else:
-        subprocess.run(
-            ["git", "worktree", "add", "-b", branch_name, str(wt_path), base_branch],
-            cwd=project_root, check=True, capture_output=True,
-        )
+        _run_git_worktree(["git", "worktree", "add", "-b", branch_name, str(wt_path), base_branch])
 
     _symlink_warchief_dir(project_root, wt_path)
     log.info("Created branch worktree: %s on %s", wt_path, branch_name)
@@ -105,8 +109,15 @@ def create_detached_worktree(
     wt_path = root / agent_id
 
     if wt_path.exists():
-        log.warning("Worktree already exists at %s, reusing", wt_path)
-        return wt_path
+        # Only reuse if it's a real git worktree (has .git file)
+        if (wt_path / ".git").exists():
+            log.warning("Worktree already exists at %s, reusing", wt_path)
+            return wt_path
+        else:
+            # Broken directory from previous failed attempt — remove it
+            log.warning("Removing broken worktree directory at %s", wt_path)
+            import shutil
+            shutil.rmtree(wt_path, ignore_errors=True)
 
     subprocess.run(
         ["git", "worktree", "add", "--detach", str(wt_path), commit_ref],
@@ -135,8 +146,15 @@ def create_integrator_worktree(
     wt_path = root / agent_id
 
     if wt_path.exists():
-        log.warning("Worktree already exists at %s, reusing", wt_path)
-        return wt_path
+        # Only reuse if it's a real git worktree (has .git file)
+        if (wt_path / ".git").exists():
+            log.warning("Worktree already exists at %s, reusing", wt_path)
+            return wt_path
+        else:
+            # Broken directory from previous failed attempt — remove it
+            log.warning("Removing broken worktree directory at %s", wt_path)
+            import shutil
+            shutil.rmtree(wt_path, ignore_errors=True)
 
     # Create a temporary integration branch at the same commit as base
     integration_branch = f"integrate/{agent_id}"
@@ -188,31 +206,36 @@ def finalize_integration(
         )
 
 
-def remove_worktree(project_root: Path, agent_id: str) -> None:
-    """Remove a worktree and prune."""
+def remove_worktree(project_root: Path, agent_id: str) -> bool:
+    """Remove a worktree and prune. Returns True if actually removed."""
+    import shutil
     wt_path = _worktrees_root(project_root) / agent_id
     if not wt_path.exists():
         log.debug("Worktree %s already removed", wt_path)
-        return
+        return True
 
     result = subprocess.run(
         ["git", "worktree", "remove", "--force", str(wt_path)],
         cwd=project_root, capture_output=True, text=True,
     )
-    if result.returncode != 0:
-        log.warning("git worktree remove failed for %s: %s", wt_path, result.stderr.strip())
+
+    # If git worktree remove failed, force-delete the directory
+    if wt_path.exists():
+        if result.returncode != 0:
+            log.warning("git worktree remove failed for %s: %s", wt_path, result.stderr.strip())
+        shutil.rmtree(wt_path, ignore_errors=True)
+
     subprocess.run(
         ["git", "worktree", "prune"],
         cwd=project_root, capture_output=True,
     )
-    # If git didn't fully clean up the directory, remove it manually
-    if wt_path.exists():
-        import shutil
-        try:
-            shutil.rmtree(wt_path)
-        except OSError as e:
-            log.warning("Failed to remove worktree directory %s: %s", wt_path, e)
-    log.info("Removed worktree: %s", wt_path)
+
+    removed = not wt_path.exists()
+    if removed:
+        log.info("Removed worktree: %s", wt_path)
+    else:
+        log.error("Failed to remove worktree: %s", wt_path)
+    return removed
 
 
 def repair_worktree(project_root: Path, agent_id: str) -> bool:

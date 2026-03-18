@@ -30,3 +30,4 @@ If your work was previously rejected (feedback will be in the scratchpad):
 - Read the rejection comment carefully — it contains specific details
 - Fix the exact issues mentioned — don't rewrite everything
 - Do NOT skip, disable, or delete failing tests — fix the underlying code
+- Do NOT merge anything

@@ -57,3 +57,10 @@ warchief agent-update --comment "SECURITY: SQL injection in user_query(). Use pa
 ```
 
 The `--task-id` is automatically read from the WARCHIEF_TASK environment variable.
+
+## What You Must NOT Do
+
+- Do NOT modify any code
+- Do NOT create files
+- Do NOT make changes to the repository
+- Do NOT merge anything

@@ -46,6 +46,24 @@ def install_agent_hooks(
 
     # Write the hook scripts
     _write_verify_task_hook(hooks_dir)
+    _write_bash_guard_hook(hooks_dir, role)
+
+    # Install git pre-push hook to block pushes to main/master
+    _write_git_pre_push_hook(worktree_path)
+
+    # Read-only roles: block git commit/push/add via PreToolUse
+    readonly_roles = {"investigator", "reviewer", "security_reviewer", "planner", "challenger"}
+    bash_guard_hooks = []
+    if role in readonly_roles:
+        bash_guard_hooks.append({
+            "matcher": "Bash",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": "python3 .claude/hooks/bash_guard.py"
+                }
+            ]
+        })
 
     # Write settings.json with hook configuration
     # Use relative path so settings.json works regardless of worktree location
@@ -61,7 +79,8 @@ def install_agent_hooks(
                         }
                     ]
                 }
-            ]
+            ],
+            **({"PreToolUse": bash_guard_hooks} if bash_guard_hooks else {}),
         }
     }
 
@@ -155,6 +174,101 @@ if __name__ == "__main__":
 '''
     hook_path = hooks_dir / "verify_task_updated.py"
     hook_path.write_text(script)
+    hook_path.chmod(0o755)
+
+
+def _write_bash_guard_hook(hooks_dir: Path, role: str) -> None:
+    """Write the bash guard PreToolUse hook.
+
+    For read-only roles, blocks git commit, git push, git add, and write operations.
+    For ALL roles, blocks git push to main/master.
+    """
+    script = '''#!/usr/bin/env python3
+"""PreToolUse hook: block destructive bash commands for read-only roles.
+
+Reads hook input from stdin (JSON with tool_name and tool_input),
+outputs JSON response to block or allow.
+"""
+import json
+import os
+import sys
+
+
+READONLY_BLOCKED = ["git commit", "git push", "git add", "npm install", "pip install", "yarn add"]
+
+
+def main():
+    role = os.environ.get("WARCHIEF_ROLE", "")
+    readonly_roles = {"investigator", "reviewer", "security_reviewer", "planner", "challenger"}
+
+    try:
+        hook_input = json.loads(sys.stdin.read())
+    except (json.JSONDecodeError, EOFError):
+        return
+
+    tool_input = hook_input.get("tool_input", {})
+    command = tool_input.get("command", "")
+
+    if role in readonly_roles:
+        for blocked in READONLY_BLOCKED:
+            if blocked in command:
+                result = {
+                    "decision": "block",
+                    "reason": f"Role '{role}' is read-only — '{blocked}' is not allowed."
+                }
+                print(json.dumps(result))
+                return
+
+    # For ALL roles: block push to main/master
+    if "git push" in command:
+        parts = command.split()
+        # Detect: git push origin main, git push origin master, git push (no branch = default)
+        if any(b in parts for b in ("main", "master")):
+            result = {
+                "decision": "block",
+                "reason": "Pushing to main/master is not allowed. Only push to feature branches."
+            }
+            print(json.dumps(result))
+            return
+
+
+if __name__ == "__main__":
+    main()
+'''
+    hook_path = hooks_dir / "bash_guard.py"
+    hook_path.write_text(script)
+    hook_path.chmod(0o755)
+
+
+def _write_git_pre_push_hook(worktree_path: Path) -> None:
+    """Install a git pre-push hook that blocks pushes to main/master."""
+    git_hooks_dir = worktree_path / ".git" / "hooks"
+    # In worktrees, .git is a file pointing to the main repo's .git/worktrees/<name>
+    git_file = worktree_path / ".git"
+    if git_file.is_file():
+        # It's a worktree — read the gitdir path
+        content = git_file.read_text().strip()
+        if content.startswith("gitdir: "):
+            gitdir = Path(content[len("gitdir: "):])
+            if not gitdir.is_absolute():
+                gitdir = (worktree_path / gitdir).resolve()
+            git_hooks_dir = gitdir / "hooks"
+
+    git_hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook_path = git_hooks_dir / "pre-push"
+    hook_path.write_text(
+        '#!/bin/sh\n'
+        '# Warchief: block pushes to main/master\n'
+        'remote="$1"\n'
+        'while read local_ref local_sha remote_ref remote_sha; do\n'
+        '  case "$remote_ref" in\n'
+        '    refs/heads/main|refs/heads/master)\n'
+        '      echo "ERROR: Pushing to main/master is blocked by warchief." >&2\n'
+        '      exit 1\n'
+        '      ;;\n'
+        '  esac\n'
+        'done\n'
+    )
     hook_path.chmod(0o755)
 
 

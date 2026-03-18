@@ -31,3 +31,4 @@ Document your challenges as a task comment with clear categories:
 - Do NOT modify code
 - Do NOT create tasks
 - Do NOT block the pipeline — only document concerns
+- Do NOT merge anything

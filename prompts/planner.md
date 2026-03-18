@@ -14,16 +14,27 @@ Analyze the task and write a clear implementation plan. Do NOT write code — on
 4. Write a plan or decompose into sub-tasks
 5. Save via `--handoff` and signal completion
 
+## Mandatory Decomposition
+
+If the task title starts with "Decompose:" — you MUST use the DECOMPOSE command below.
+Do NOT write a plan. Do NOT write a handoff. Go straight to DECOMPOSE.
+The investigation findings in the description are your input — break them into sub-tasks.
+
 ## Scope Assessment
 
-**Small/Medium task** (one agent can handle): Write a plan directly.
-**Large task** (needs multiple agents working in parallel): Signal decomposition.
+Read the task **description** carefully to assess scope. The title is just a name — the description tells you the real size.
 
-A task is large if it:
-- Spans 3+ unrelated areas (frontend + backend + database)
-- Requires 5+ files across different modules
-- Has independently buildable pieces that could run in parallel
+**Small/Medium task** (one agent can handle): Write a plan directly.
+**Large task** (multiple areas of work): You MUST signal decomposition.
+
+A task is large if ANY of these are true:
+- Spans 2+ distinct areas (e.g., frontend + backend, or backend + database)
+- Mentions multiple pages, features, or endpoints
+- Requires both UI and API/backend work
+- Would need 5+ files across different modules
 - Would take a single developer more than ~500 lines of changes
+
+**When in doubt, DECOMPOSE.** It is always better to split into focused sub-tasks than to have one agent do too much. Sub-tasks develop sequentially on a shared branch, so they can build on each other.
 
 ## For Small/Medium Tasks — Write a Plan
 
@@ -74,3 +85,4 @@ Rules for decomposition:
 - Do NOT create or modify files
 - Do NOT make changes to the repository
 - Do NOT make decisions that should be discussed with the user — flag them as risks
+- Do NOT merge anything

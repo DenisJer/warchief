@@ -9,7 +9,7 @@ default = "claude-sonnet-4-20250514"
 
 [permissions]
 allowed_tools = ["Read", "Glob", "Grep", "WebSearch", "Bash"]
-disallowed_bash_commands = ["rm -rf /", "sudo rm", "chmod 777", "mkfs"]
+disallowed_bash_commands = ["rm -rf /", "sudo rm", "chmod 777", "mkfs", "git commit", "git push", "git add", "npm install", "pip install", "yarn add"]
 
 [health]
 timeout_seconds = 3600

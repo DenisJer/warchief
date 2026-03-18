@@ -88,6 +88,40 @@ def build_prime_context(
         if len(qa_lines) > 1:  # More than just the header
             sections.append("\n".join(qa_lines))
 
+    # Group sibling context
+    if task.group_id:
+        siblings = store.get_group_tasks(task.group_id)
+        siblings = [s for s in siblings if s.id != task.id]
+        if siblings and role == "developer":
+            done = [s for s in siblings if "group-dev-done" in s.labels or s.status == "closed"]
+            pending = [s for s in siblings if s not in done]
+            all_closed = all(s.status == "closed" for s in siblings)
+            lines = ["## Group Context (sibling tasks on this branch)"]
+            if all_closed:
+                # Lead task after rejection — responsible for ALL code on the branch
+                lines.append("You are the GROUP LEAD. All sibling tasks are closed.")
+                lines.append("Their code is on this branch — you are responsible for fixing ALL issues:")
+                for s in siblings:
+                    lines.append(f"- {s.title}")
+            else:
+                if done:
+                    lines.append("Completed siblings (their commits are already on this branch):")
+                    for s in done:
+                        lines.append(f"- {s.id}: {s.title}")
+                if pending:
+                    lines.append("Pending siblings (will develop after you):")
+                    for s in pending:
+                        lines.append(f"- {s.id}: {s.title}")
+            sections.append("\n".join(lines))
+        elif siblings and role in ("reviewer", "security_reviewer"):
+            lines = ["## Group Context — Review ALL changes as a cohesive unit",
+                     "This branch contains work from multiple sub-tasks. "
+                     "Review the combined changes holistically:"]
+            for s in siblings:
+                lines.append(f"- {s.id}: {s.title}")
+            lines.append(f"- {task.id}: {task.title} (this task)")
+            sections.append("\n".join(lines))
+
     # Dependency status
     if task.deps:
         sections.append("## Dependencies")

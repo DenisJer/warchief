@@ -529,12 +529,15 @@ async def escalate_investigation(task_id: str):
         id=conductor_id,
         title=f"Decompose: {task.title}",
         description=(
-            f"Based on investigation {task_id}, break down the following findings into "
-            f"actionable development tasks:\n\n{findings}"
+            f"IMPORTANT: Use the DECOMPOSE command to create sub-tasks from these findings. "
+            f"Do NOT write code or documentation — signal decomposition only.\n\n"
+            f"Based on investigation {task_id}, create independently buildable sub-tasks "
+            f"from the following findings:\n\n{findings}"
         ),
         status="open",
         type="feature",
         priority=task.priority,
+        labels=["must-decompose"],
         created_at=now,
         updated_at=now,
     )
@@ -575,11 +578,14 @@ async def decompose_task(task_id: str, body: DecomposeBody):
         if not st.get("title"):
             continue
         sub_id = f"wc-{uuid.uuid4().hex[:6]}"
+        # Sub-tasks skip planning — the parent planner already planned
         record = TaskRecord(
             id=sub_id,
             title=st["title"],
             description=st.get("description", ""),
             status="open",
+            stage="development",
+            labels=["stage:development"],
             type=st.get("type", "feature"),
             priority=st.get("priority", task.priority),
             group_id=group_id,
@@ -677,6 +683,51 @@ async def increase_budget(task_id: str, body: ActionBody):
     new_labels = [l for l in task.labels if l != "budget-exceeded"]
     store.update_task(task_id, status="open", budget=new_budget, labels=new_labels)
     return {"ok": True, "new_budget": new_budget}
+
+
+class ConfigUpdateBody(BaseModel):
+    paused: bool | None = None
+    session_limit: float | None = None
+    per_task_default: float | None = None
+
+
+@app.post("/api/config")
+async def update_config(body: ConfigUpdateBody):
+    """Update pipeline config (pause/unpause, budget limits)."""
+    from warchief.config import read_config, write_config
+    config = read_config(_project_root)
+    changed = []
+
+    if body.paused is not None:
+        config.paused = body.paused
+        changed.append(f"paused={body.paused}")
+    if body.session_limit is not None:
+        config.budget.session_limit = body.session_limit
+        changed.append(f"session_limit={body.session_limit}")
+    if body.per_task_default is not None:
+        config.budget.per_task_default = body.per_task_default
+        changed.append(f"per_task_default={body.per_task_default}")
+
+    if changed:
+        write_config(_project_root, config)
+
+    return {
+        "ok": True,
+        "changed": changed,
+        "paused": config.paused,
+        "session_limit": config.budget.session_limit,
+        "per_task_default": config.budget.per_task_default,
+    }
+
+
+@app.post("/api/unpause")
+async def unpause():
+    """Quick unpause — convenience endpoint."""
+    from warchief.config import read_config, write_config
+    config = read_config(_project_root)
+    config.paused = False
+    write_config(_project_root, config)
+    return {"ok": True, "paused": False}
 
 
 @app.get("/api/watcher-log")
@@ -800,7 +851,7 @@ async def list_all_tasks():
         result.append({
             "id": t.id,
             "title": t.title,
-            "description": t.description[:300] if t.description else "",
+            "description": t.description or "",
             "type": t.type,
             "status": t.status,
             "stage": t.stage or "",

@@ -10,9 +10,21 @@ pip install -e ".[dev,ui,web]"      # Install with all extras
 pytest tests/ -x -q                 # Run all tests (435 tests, must all pass)
 pytest tests/test_state_machine.py  # Run single test file
 ruff check warchief/                # Lint
+ruff format --check warchief/ tests/  # Format check (CI enforces this)
 mypy warchief/                      # Type check
 ./release.sh --patch                # Release to PyPI + update Homebrew tap
 ```
+
+### Frontend (Vue 3 SPA)
+
+```bash
+cd warchief/web/frontend
+npm install                         # First time only
+npm run dev                         # Vite dev server (localhost:5173, proxies API to :8095)
+npm run build                       # Build to warchief/web/static/ (required before release)
+```
+
+`release.sh` runs `npm run build` automatically before building the Python package. After frontend changes, rebuild before testing the web dashboard.
 
 ## Architecture
 
@@ -46,7 +58,7 @@ Prompt is piped through `agent_log_writer.py` which parses stream-json and write
 
 FastAPI app with WebSocket (`/ws` pushes state every 2s). Single shared DB connection to avoid SQLite lock contention. One dashboard per project enforced via `dashboard.lock` flock. Auto-finds available port, auto-opens browser.
 
-`app.py` — all REST endpoints + WebSocket. `static/index.html` — dashboard page. `static/agents.html` — agent log viewer page. Both are single HTML files with inline CSS/JS, no build step.
+`app.py` — all REST endpoints + WebSocket. Frontend is a Vue 3 SPA (`warchief/web/frontend/`) built with Vite + Pinia store, compiled to `warchief/web/static/`. Views: Dashboard, Tasks, Agents. Components: TaskCard, PipelineView, QuestionPanel, EventLog, etc. Vite dev server proxies `/api/*` and `/ws` to the FastAPI backend.
 
 ### Budget System (config.py → watcher.py → cost_tracker.py)
 
@@ -64,6 +76,14 @@ Planner agents can signal `DECOMPOSE: [{...}]` via `--comment`. Watcher's `_chec
 
 `_detect_labels()` scans changed files after development stage. Auth/crypto/token patterns → `security` label. Frontend extensions → `frontend` label. Labels drive pipeline routing (security-review stage, E2E tests).
 
+### Pipeline Configuration (pipelines/*.toml)
+
+Pipeline stages and routing are defined in TOML files, not hardcoded:
+- `pipelines/default.toml` — standard dev → review → [security-review] → pr-create flow
+- `pipelines/investigation.toml` — research-focused: investigation → challenge → consolidation → planning → dev
+
+Each defines stage ordering, role assignments, label-based routing rules (e.g., `security` label inserts security-review), spawn limits, poll intervals, and cooldowns.
+
 ## Key Conventions
 
 - **`pip install -e .` after code changes** — CLI runs from installed package, not source
@@ -78,6 +98,13 @@ Planner agents can signal `DECOMPOSE: [{...}]` via `--comment`. Watcher's `_chec
 ## Roles
 
 Defined in `warchief/roles/*.toml` (permissions, model, limits) + `prompts/*.md` (system prompt). Key roles: `planner` (reads codebase, writes plan or decomposes), `developer` (writes code, commits), `tester` (writes + commits tests), `reviewer` (reviews code + tests), `investigator` (research only), `conductor` (Opus, decomposes requirements), `pr_creator` (pushes + creates PR).
+
+## CI (GitHub Actions)
+
+`.github/workflows/ci.yml` runs on push to main + PRs:
+- **Lint**: `ruff check` + `ruff format --check` on `warchief/` and `tests/`
+- **Typecheck**: `mypy warchief/`
+- **Test**: `pytest` across Python 3.11, 3.12, 3.13 with coverage
 
 ## Distribution
 

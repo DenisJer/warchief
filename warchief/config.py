@@ -46,7 +46,7 @@ FRONTEND_EXTENSIONS = {
 
 STATUSES = ["open", "in_progress", "blocked", "closed"]
 
-SPECIAL_LABELS = ["rejected", "waiting", "security", "frontend", "question", "needs-testing", "needs-plan-approval", "needs-review", "budget-exceeded"]
+SPECIAL_LABELS = ["rejected", "waiting", "security", "frontend", "question", "needs-testing", "needs-plan-approval", "needs-review", "budget-exceeded", "group-dev-done", "group-waiting"]
 
 # --- Tuning Constants (defaults, overridable in config.toml) ---
 

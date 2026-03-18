@@ -95,3 +95,9 @@ If your tests were previously rejected (e.g., reviewer said tests are too shallo
 - Read the feedback carefully
 - Add the missing test coverage
 - Commit and signal completion
+
+
+
+## What You Must NOT Do
+
+- Do NOT merge anything

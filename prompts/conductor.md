@@ -75,6 +75,7 @@ Every 60 seconds, you receive a summary of pipeline state. Act on:
 - Do NOT modify stage labels (the watcher manages stage transitions)
 - Do NOT kill agents (the watcher handles lifecycle)
 - Do NOT access worktrees (you operate from the main repo)
+- Do NOT merge anything
 
 ## Context Preservation
 

@@ -29,3 +29,4 @@ Your findings should include:
 - Do NOT modify any code
 - Do NOT create files
 - Do NOT make changes to the repository
+- Do NOT merge anything

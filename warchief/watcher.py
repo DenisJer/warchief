@@ -85,6 +85,10 @@ class Watcher:
             return
 
         log.info("Watcher started (PID %d)", os.getpid())
+
+        # Clean up ALL stale worktrees and sessions on startup
+        self._startup_cleanup()
+
         try:
             while self._running:
                 try:
@@ -97,6 +101,104 @@ class Watcher:
             self._kill_all_agents()
             _release_lock(lock_fd, lock_path)
             log.info("Watcher stopped")
+
+    def _startup_cleanup(self) -> None:
+        """Clean up stale state from previous watcher sessions.
+
+        Removes all worktrees with no live agent process, clears dead
+        agent records, prunes git worktrees, and ensures main repo
+        is on the default branch.
+        """
+        import subprocess
+
+        # 1. Remove all worktrees where the agent process is dead
+        from warchief.worktree import list_worktrees
+        worktree_ids = list_worktrees(self.project_root)
+        all_agents = self.store._conn.execute(
+            "SELECT id, pid, status FROM agents"
+        ).fetchall()
+        agent_pids = {row[0]: row[1] for row in all_agents}
+
+        removed = 0
+        for wt_id in worktree_ids:
+            pid = agent_pids.get(wt_id)
+            alive = False
+            if pid:
+                try:
+                    os.kill(pid, 0)
+                    alive = True
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
+            if not alive:
+                try:
+                    remove_worktree(self.project_root, wt_id)
+                    removed += 1
+                except Exception:
+                    pass
+
+        # 2. Mark agents as dead ONLY if their process is actually dead
+        alive_agents = self.store._conn.execute(
+            "SELECT id, pid FROM agents WHERE status IN ('alive', 'zombie')"
+        ).fetchall()
+        for agent_id, pid in alive_agents:
+            process_alive = False
+            if pid:
+                try:
+                    os.kill(pid, 0)
+                    process_alive = True
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
+            if not process_alive:
+                self.store._conn.execute(
+                    "UPDATE agents SET status = 'dead' WHERE id = ?", (agent_id,)
+                )
+                log.info("Startup: marked agent %s as dead (PID %s not alive)", agent_id, pid)
+            else:
+                log.info("Startup: agent %s still alive (PID %s), keeping", agent_id, pid)
+        self.store._conn.commit()
+
+        # 3. Reset any in_progress tasks (orphaned from previous session)
+        orphans = self.store._conn.execute(
+            "SELECT id FROM tasks WHERE status = 'in_progress'"
+        ).fetchall()
+        for (tid,) in orphans:
+            self.store.update_task(tid, status="open", assigned_agent=None)
+
+        # 4. Prune git worktrees
+        try:
+            subprocess.run(
+                ["git", "worktree", "prune"],
+                cwd=self.project_root, capture_output=True, timeout=10,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
+        # 5. Ensure main repo is on default branch
+        try:
+            result = subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=self.project_root, capture_output=True, text=True, timeout=5,
+            )
+            current = result.stdout.strip()
+            if current and current.startswith("feature/"):
+                base = _default_branch(self.project_root)
+                subprocess.run(
+                    ["git", "checkout", base],
+                    cwd=self.project_root, capture_output=True, timeout=10,
+                )
+                log.info("Switched main repo from %s to %s", current, base)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
+        # 6. Clear stale sessions
+        sessions_dir = self.project_root / ".warchief" / "sessions"
+        if sessions_dir.exists():
+            for sf in sessions_dir.glob("*.session"):
+                sf.unlink(missing_ok=True)
+
+        if removed or orphans:
+            log.info("Startup cleanup: removed %d worktrees, reset %d orphaned tasks", removed, len(orphans))
+            self._emit(f"Startup cleanup: {removed} worktrees removed, {len(orphans)} tasks reset")
 
     def stop(self) -> None:
         """Signal the watcher to stop."""
@@ -215,6 +317,9 @@ class Watcher:
 
         blocked = self.store.list_tasks(status="blocked")
 
+        # Get set of tasks with alive agents — don't touch these
+        alive_task_ids = {a.current_task for a in self.store.get_running_agents() if a.status == "alive" and a.current_task}
+
         # Clear announced questions that have been answered
         if hasattr(self, "_announced_questions"):
             blocked_ids = {t.id for t in blocked if "question" in t.labels}
@@ -246,6 +351,10 @@ class Watcher:
                 self._announced_testing -= approved
 
         for task in blocked:
+            # Skip if an agent is still alive for this task
+            if task.id in alive_task_ids:
+                continue
+
             # Questions need a user answer — announce them loudly, don't auto-recover
             if "question" in task.labels:
                 self._announce_question(task)
@@ -465,11 +574,14 @@ class Watcher:
             if not st.get("title"):
                 continue
             task_id = f"wc-{uuid.uuid4().hex[:6]}"
+            # Sub-tasks skip planning — the parent planner already planned
             record = TaskRecord(
                 id=task_id,
                 title=st["title"],
                 description=st.get("description", ""),
                 status="open",
+                stage="development",
+                labels=["stage:development"],
                 type=st.get("type", "feature"),
                 priority=st.get("priority", parent.priority),
                 group_id=group_id,
@@ -479,7 +591,7 @@ class Watcher:
             )
             self.store.create_task(record)
             created_ids.append(task_id)
-            log.info("Created sub-task %s: %s (group %s)", task_id, st["title"], group_id)
+            log.info("Created sub-task %s: %s (group %s) → development", task_id, st["title"], group_id)
 
         if created_ids:
             # Close parent — sub-tasks carry the work now
@@ -503,6 +615,125 @@ class Watcher:
 
     # ── Group PR gate ──────────────────────────────────────────
 
+    def _check_group_dev_gate(self, task: TaskRecord) -> bool:
+        """Gate grouped tasks after development until all siblings finish.
+
+        Returns True if the gate handled the DB update (caller should return early).
+        Returns False if this task is not subject to the gate.
+        """
+        siblings = self.store.get_group_tasks(task.group_id)
+
+        # Mark this task as dev-done and hold it
+        fresh = self.store.get_task(task.id)
+        if not fresh:
+            return False
+        new_labels = list(fresh.labels)
+        if "group-dev-done" not in new_labels:
+            new_labels.append("group-dev-done")
+        if "group-waiting" not in new_labels:
+            new_labels.append("group-waiting")
+
+        not_done = [
+            s for s in siblings
+            if s.id != task.id
+            and "group-dev-done" not in s.labels
+            and s.status != "closed"
+        ]
+
+        if not_done:
+            # Not all siblings done — hold at development
+            self.store.update_task(
+                task.id, labels=new_labels, status="open",
+                assigned_agent=None,
+            )
+            waiting_ids = [s.id for s in not_done]
+            self._emit(
+                f"Task {task.id}: dev complete, waiting for siblings {waiting_ids}"
+            )
+            log.info("Group dev gate: %s waiting for %s", task.id, waiting_ids)
+            return True
+
+        # All siblings done — elect group lead (first in list = highest priority)
+        lead = siblings[0]  # get_group_tasks orders by priority DESC
+
+        # Enrich the lead's description with all sibling work so the
+        # reviewer/tester (and any rejection-retry developer) sees the full scope
+        sibling_descriptions = []
+        for s in siblings:
+            if s.id == lead.id:
+                continue
+            sibling_descriptions.append(f"- {s.title}: {s.description}" if s.description else f"- {s.title}")
+        if sibling_descriptions:
+            combined_desc = (
+                f"{lead.description}\n\n"
+                f"## Combined Group Scope\n"
+                f"This task is the group lead. The branch includes work from all sub-tasks:\n"
+                + "\n".join(sibling_descriptions)
+                + "\n\nOn rejection, fix issues across ALL sub-tasks — the entire branch is your responsibility."
+            )
+            self.store.update_task(lead.id, description=combined_desc)
+
+        # Advance the lead to the next pipeline stage
+        from warchief.state_machine import get_next_stage
+        next_stage = get_next_stage("development", lead.labels)
+        if not next_stage:
+            next_stage = "testing"  # fallback
+
+        if lead.id == task.id:
+            # This task IS the lead — advance it
+            lead_labels = [l for l in new_labels if l != "group-waiting"]
+            if f"stage:{next_stage}" not in lead_labels:
+                lead_labels.append(f"stage:{next_stage}")
+            lead_labels = [l for l in lead_labels if not l.startswith("stage:development")]
+            self.store.update_task(
+                lead.id, stage=next_stage, labels=lead_labels,
+                status="open", assigned_agent=None,
+            )
+        else:
+            # Lead is a different task — advance it, close this task
+            lead_fresh = self.store.get_task(lead.id)
+            if lead_fresh:
+                lead_labels = list(lead_fresh.labels)
+                lead_labels = [l for l in lead_labels if l != "group-waiting"]
+                if f"stage:{next_stage}" not in lead_labels:
+                    lead_labels.append(f"stage:{next_stage}")
+                lead_labels = [l for l in lead_labels if not l.startswith("stage:development")]
+                self.store.update_task(
+                    lead.id, stage=next_stage, labels=lead_labels,
+                    status="open", assigned_agent=None,
+                )
+            # Close this task
+            self.store.update_task(
+                task.id, status="closed", assigned_agent=None,
+                labels=new_labels,
+            )
+
+        # Close all non-lead siblings
+        for s in siblings:
+            if s.id == lead.id:
+                continue
+            if s.status == "closed":
+                continue
+            self.store.update_task(s.id, status="closed")
+            self.store.log_event(EventRecord(
+                event_type="advance",
+                task_id=s.id,
+                details={
+                    "from_stage": s.stage,
+                    "to_stage": "closed",
+                    "reason": f"Group lead {lead.id} advancing to {next_stage}",
+                },
+                actor="watcher",
+            ))
+            self._emit(f"Task {s.id}: closed (group lead is {lead.id})")
+
+        self._emit(
+            f"All group siblings done — {lead.id} advancing to {next_stage} "
+            f"on branch feature/{task.group_id}"
+        )
+        log.info("Group dev gate: all done, lead=%s advancing to %s", lead.id, next_stage)
+        return True
+
     def _check_group_pr_gate(self, task: TaskRecord) -> None:
         """For grouped tasks, only one task creates the PR.
 
@@ -512,6 +743,26 @@ class Watcher:
         proceed and close the rest.
         """
         siblings = self.store.get_group_tasks(task.group_id)
+
+        # If all siblings are already closed (dev gate consolidated to a lead),
+        # this task IS the lead — just let it proceed to pr-creation
+        active_siblings = [
+            s for s in siblings
+            if s.id != task.id and s.status != "closed"
+        ]
+        if not active_siblings:
+            # Remove group-waiting label if present and let it proceed
+            fresh = self.store.get_task(task.id)
+            if fresh:
+                new_labels = [l for l in fresh.labels if l != "group-waiting"]
+                if new_labels != list(fresh.labels):
+                    self.store.update_task(task.id, labels=new_labels)
+            self._emit(
+                f"Task {task.id}: group lead proceeding to PR creation "
+                f"on branch feature/{task.group_id}"
+            )
+            return
+
         not_ready = [
             s for s in siblings
             if s.id != task.id
@@ -813,22 +1064,36 @@ class Watcher:
                 sf.unlink(missing_ok=True)
 
         # Ensure main repo is not checked out on the feature branch
-        try:
-            import subprocess
-            result = subprocess.run(
-                ["git", "branch", "--show-current"],
-                cwd=self.project_root, capture_output=True, text=True, timeout=5,
-            )
-            current_branch = result.stdout.strip()
-            if current_branch == task_branch:
-                base = task.base_branch or self.config.base_branch or _default_branch(self.project_root)
-                subprocess.run(
-                    ["git", "checkout", base],
-                    cwd=self.project_root, capture_output=True, timeout=10,
+        # But skip if group siblings are still active (they need the branch)
+        skip_branch_switch = False
+        if task.group_id:
+            siblings = self.store.get_group_tasks(task.group_id)
+            active_siblings = [
+                s for s in siblings
+                if s.id != task.id and s.status != "closed"
+            ]
+            if active_siblings:
+                skip_branch_switch = True
+                log.info("Skipping branch switch for %s — %d group siblings still active",
+                         task.id, len(active_siblings))
+
+        if not skip_branch_switch:
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["git", "branch", "--show-current"],
+                    cwd=self.project_root, capture_output=True, text=True, timeout=5,
                 )
-                log.info("Switched main repo back to %s (was on %s)", base, task_branch)
-        except (subprocess.TimeoutExpired, OSError) as e:
-            log.warning("Failed to check/switch branch: %s", e)
+                current_branch = result.stdout.strip()
+                if current_branch == task_branch:
+                    base = task.base_branch or self.config.base_branch or _default_branch(self.project_root)
+                    subprocess.run(
+                        ["git", "checkout", base],
+                        cwd=self.project_root, capture_output=True, timeout=10,
+                    )
+                    log.info("Switched main repo back to %s (was on %s)", base, task_branch)
+            except (subprocess.TimeoutExpired, OSError) as e:
+                log.warning("Failed to check/switch branch: %s", e)
 
         self._emit(f"Cleaned up completed task {task.id}")
 
@@ -987,6 +1252,40 @@ class Watcher:
             task.id, result.next_stage, result.status, result.has_changes, result.failure_reason,
         )
 
+        # Guard: feature/bug tasks exiting development with only docs/markdown
+        # changes should be sent back — the developer didn't write real code
+        if (
+            task.stage == "development"
+            and result.next_stage
+            and task.type in ("feature", "bug")
+        ):
+            changed = self._get_changed_files(task)
+            from warchief.state_machine import DOC_EXTENSIONS
+            files_with_ext = [f for f in changed if "." in f]
+            all_docs = bool(files_with_ext) and all(
+                ("." + f.rsplit(".", 1)[-1]).lower() in DOC_EXTENSIONS
+                for f in files_with_ext
+            )
+            if all_docs:
+                log.warning(
+                    "Task %s: developer produced only doc files %s — resetting to development",
+                    task.id, changed,
+                )
+                self._emit(f"Task {task.id}: docs-only changes rejected — developer must write code")
+                # Store feedback message so the re-spawned developer knows what went wrong
+                from warchief.models import MessageRecord
+                self.store.create_message(MessageRecord(
+                    id="", from_agent="watcher", to_agent=task.id,
+                    message_type="feedback",
+                    body=(
+                        "Your changes contained only documentation/markdown files. "
+                        "This is a code task — you must implement the actual code changes "
+                        "described in the task, not create planning documents."
+                    ),
+                    persistent=True,
+                ))
+                result = TransitionResult(status="open")
+
         # Build a single update dict to avoid optimistic locking failures
         # from multiple sequential update_task calls
         task_updates: dict = {"assigned_agent": None}
@@ -1061,6 +1360,13 @@ class Watcher:
                         add_labels=[f"stage:{next_next}"],
                         next_stage=next_next,
                     )
+
+        # Group development gate: hold grouped tasks until all siblings finish dev
+        if task.stage == "development" and result.next_stage and task.group_id:
+            if self._check_group_dev_gate(task):
+                self._store_handoff_or_rejection(task, agent, result)
+                cleanup_heartbeat(self.project_root, agent.id)
+                return
 
         # Apply ALL task updates in a single call (avoids optimistic lock failures)
         self.store.update_task(task.id, **task_updates)
@@ -1292,45 +1598,11 @@ class Watcher:
             self.store.update_task(task.id, assigned_agent=None)
             self._emit(f"Cleared stale agent from task {task.id}")
 
-        # Cleanup orphaned worktrees — ONLY if agent process is truly dead
-        # Must check PID, not just DB status, to avoid killing active agents
-        # after watcher restart (new watcher doesn't track old agents' procs)
-        from warchief.worktree import list_worktrees
-        worktree_ids = set(list_worktrees(self.project_root))
-        if worktree_ids:
-            # Build set of worktrees we must NOT touch
-            keep_worktrees: set[str] = set()
-
-            # Keep worktrees for agents that are alive in DB
-            for a in self.store.get_running_agents():
-                if a.status == "alive":
-                    keep_worktrees.add(a.id)
-
-            # Keep worktrees for agents whose PID is still running
-            # (catches agents from previous watcher session)
-            all_agents_rows = self.store._conn.execute(
-                "SELECT id, pid FROM agents WHERE pid IS NOT NULL"
-            ).fetchall()
-            for agent_id, pid in all_agents_rows:
-                if pid and _is_process_alive(pid):
-                    keep_worktrees.add(agent_id)
-
-            # Keep worktrees with saved sessions (for resume)
-            sessions_dir = self.project_root / ".warchief" / "sessions"
-            if sessions_dir.exists():
-                for sf in sessions_dir.glob("*.session"):
-                    try:
-                        sd = json.loads(sf.read_text())
-                        wt_agent = sd.get("agent_id", "")
-                        if wt_agent:
-                            keep_worktrees.add(wt_agent)
-                    except (json.JSONDecodeError, OSError):
-                        pass
-
-            orphaned_wt = worktree_ids - keep_worktrees
-            for wt_id in orphaned_wt:
-                remove_worktree(self.project_root, wt_id)
-                self._emit(f"Cleaned up orphaned worktree: {wt_id}")
+        # Worktree cleanup REMOVED from per-tick loop.
+        # Was deleting active agent worktrees due to race conditions.
+        # Cleanup now only happens at:
+        # - _startup_cleanup() on watcher start
+        # - _cleanup_completed_task() when tasks close
 
     # ── Transition processing ───────────────────────────────────
 
@@ -1365,6 +1637,9 @@ class Watcher:
         waiting = self.store.list_tasks(has_label="group-waiting")
         for task in waiting:
             if not task.group_id:
+                continue
+            # Skip already-closed tasks (dev gate may have closed them)
+            if task.status == "closed":
                 continue
             siblings = self.store.get_group_tasks(task.group_id)
             not_ready = [
@@ -1482,7 +1757,9 @@ class Watcher:
         """Find tasks ready for work and spawn agents."""
         spawned_this_cycle = 0
         failed_this_cycle = 0
-        max_failures_per_cycle = 3  # Stop trying after 3 failures in one tick
+        max_failures_per_cycle = 3
+        # Tasks with alive agents — don't spawn duplicates
+        alive_task_ids = {a.current_task for a in self.store.get_running_agents() if a.status == "alive" and a.current_task}
 
         for stage, role in STAGE_TO_ROLE.items():
             if spawned_this_cycle >= MAX_SPAWNS_PER_CYCLE:
@@ -1499,12 +1776,28 @@ class Watcher:
                 if failed_this_cycle >= max_failures_per_cycle:
                     break
 
+                # Don't spawn if an agent is already alive for this task
+                if task.id in alive_task_ids:
+                    continue
+
                 if task.id in self._spawn_backoff and now < self._spawn_backoff[task.id]:
                     continue  # Still in backoff period
 
                 # Don't spawn for tasks waiting on group siblings
                 if "group-waiting" in task.labels:
                     continue
+
+                # Sequential development: only one developer per group at a time
+                if stage == "development" and task.group_id:
+                    siblings = self.store.get_group_tasks(task.group_id)
+                    sibling_developing = any(
+                        s.id != task.id
+                        and s.stage == "development"
+                        and (s.id in alive_task_ids or s.status == "in_progress")
+                        for s in siblings
+                    )
+                    if sibling_developing:
+                        continue
 
                 errors = run_preflight(
                     task, role, self.project_root,

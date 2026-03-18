@@ -1,6 +1,7 @@
 """Agent spawner — creates Claude Code processes for tasks."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 import subprocess
@@ -82,7 +83,7 @@ def build_claude_command(
             if candidate.exists():
                 prompt_path = candidate
 
-    cmd = ["claude", "--print", "--verbose", "--output-format", "stream-json"]
+    cmd = ["claude", "--print", "--verbose", "--output-format", "stream-json", "--permission-mode", "auto"]
 
     max_turns = registry.get_max_turns(role_name)
 
@@ -186,19 +187,41 @@ def build_claude_command(
             f"  warchief agent-update --task-id {task.id} --comment '<specific feedback>'\n"
         )
     elif role_name == "planner":
-        task_prompt += (
-            "\n## CRITICAL: Before you exit, you MUST do these two things:\n"
-            "### Step 1: Write your plan as handoff notes\n"
-            "The user will review your plan before development starts.\n"
-            "```bash\n"
-            f"warchief agent-update --task-id {task.id} --handoff 'YOUR FULL PLAN HERE — "
-            "files to change, approach, dependencies, risks, scope estimate'\n"
-            "```\n"
-            "### Step 2: Signal completion\n"
-            "```bash\n"
-            f"warchief agent-update --task-id {task.id} --status open\n"
-            "```\n"
-        )
+        is_decompose_task = task.title.startswith("Decompose:")
+        if is_decompose_task:
+            task_prompt += (
+                "\n## CRITICAL: This is a DECOMPOSE task — you MUST use the DECOMPOSE command.\n"
+                "Do NOT write a plan. Break the investigation findings into independently buildable sub-tasks.\n"
+                "Each sub-task must describe ACTUAL CODE CHANGES (not documentation).\n"
+                "### Step 1: Signal decomposition\n"
+                "```bash\n"
+                f"warchief agent-update --task-id {task.id} --comment 'DECOMPOSE: [\n"
+                '  {"title": "...", "description": "Implement: <specific code changes>", "type": "feature", "priority": 7}\n'
+                "]'\n"
+                "```\n"
+                "### Step 2: Write a brief handoff\n"
+                "```bash\n"
+                f"warchief agent-update --task-id {task.id} --handoff 'Decomposed into N sub-tasks: <rationale>'\n"
+                "```\n"
+                "### Step 3: Signal completion\n"
+                "```bash\n"
+                f"warchief agent-update --task-id {task.id} --status open\n"
+                "```\n"
+            )
+        else:
+            task_prompt += (
+                "\n## CRITICAL: Before you exit, you MUST do these two things:\n"
+                "### Step 1: Write your plan as handoff notes\n"
+                "The user will review your plan before development starts.\n"
+                "```bash\n"
+                f"warchief agent-update --task-id {task.id} --handoff 'YOUR FULL PLAN HERE — "
+                "files to change, approach, dependencies, risks, scope estimate'\n"
+                "```\n"
+                "### Step 2: Signal completion\n"
+                "```bash\n"
+                f"warchief agent-update --task-id {task.id} --status open\n"
+                "```\n"
+            )
     elif role_name == "investigator":
         task_prompt += (
             "\n## CRITICAL: Before you exit, you MUST do these two things:\n"
@@ -293,6 +316,19 @@ def spawn_agent(
     agent_id = _next_agent_id(role)
     now = time.time()
 
+    # Register agent placeholder in DB BEFORE creating worktree
+    # This prevents race conditions where cleanup sees the worktree
+    # but no agent record and deletes it as "orphaned"
+    placeholder = AgentRecord(
+        id=agent_id,
+        role=role,
+        status="alive",
+        current_task=task.id,
+        spawned_at=now,
+        last_heartbeat=now,
+    )
+    store.register_agent(placeholder)
+
     # Create worktree based on role config
     worktree_config = registry.get_role(role).get("worktree", {})
     wt_type = worktree_config.get("type", "none")
@@ -326,6 +362,8 @@ def spawn_agent(
                 )
     except subprocess.CalledProcessError as e:
         log.error("Failed to create worktree for %s: %s", agent_id, e)
+        # Clean up placeholder agent record
+        store.update_agent(agent_id, status="dead")
         # Increment crash count and block if too many failures
         new_crash_count = task.crash_count + 1
         if new_crash_count >= 3:
@@ -341,16 +379,18 @@ def spawn_agent(
             store.update_task(task.id, crash_count=new_crash_count)
         return None
 
-    # Install hooks and project context in agent worktree
+    # Install hooks and project context in agent worktree (or project root for no-worktree agents)
+    hooks_target = worktree_path or project_root
+    from warchief.hooks import install_agent_hooks
+    try:
+        install_agent_hooks(
+            hooks_target, agent_id, task.id, role,
+            str(project_root / ".warchief" / "warchief.db"),
+        )
+    except Exception as e:
+        log.warning("Failed to install hooks for %s: %s", agent_id, e)
+
     if worktree_path:
-        from warchief.hooks import install_agent_hooks
-        try:
-            install_agent_hooks(
-                worktree_path, agent_id, task.id, role,
-                str(project_root / ".warchief" / "warchief.db"),
-            )
-        except Exception as e:
-            log.warning("Failed to install hooks for %s: %s", agent_id, e)
 
         # Install project context as CLAUDE.md — agents read it automatically
         from warchief.project_context import install_context_in_worktree
@@ -366,7 +406,14 @@ def spawn_agent(
         try:
             session_data = json.loads(session_path.read_text())
             resume_session_id = session_data.get("session_id", "")
-            if resume_session_id:
+            # Validate the session's worktree still exists
+            old_worktree = session_data.get("worktree", "")
+            if resume_session_id and old_worktree and not Path(old_worktree).exists():
+                log.warning("Session worktree gone (%s) — starting fresh for %s",
+                            old_worktree, task.id)
+                resume_session_id = None
+                session_path.unlink(missing_ok=True)
+            elif resume_session_id:
                 log.info("Found resumable session %s for task %s (%s)",
                          resume_session_id[:12], task.id, role)
         except (json.JSONDecodeError, OSError):
@@ -472,6 +519,7 @@ def spawn_agent(
     except FileNotFoundError:
         agent_log_file.close()
         log.error("Claude CLI not found. Is 'claude' installed and on PATH?")
+        store.update_agent(agent_id, status="dead")
         store.update_task(task.id, status="blocked")
         store.log_event(EventRecord(
             event_type="block",
@@ -483,6 +531,7 @@ def spawn_agent(
     except OSError as e:
         agent_log_file.close()
         log.error("Failed to spawn agent %s: %s", agent_id, e)
+        store.update_agent(agent_id, status="dead")
         store.update_task(task.id, crash_count=task.crash_count + 1)
         return None
 
