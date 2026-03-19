@@ -1,4 +1,5 @@
 """Tests for the test runner module."""
+
 from __future__ import annotations
 
 import json
@@ -31,10 +32,12 @@ class TestHasTestCommands:
         assert has_test_commands(config) is True
 
     def test_both_commands(self):
-        config = Config(testing=TestingConfig(
-            test_command="pytest",
-            e2e_command="npx playwright test",
-        ))
+        config = Config(
+            testing=TestingConfig(
+                test_command="pytest",
+                e2e_command="npx playwright test",
+            )
+        )
         assert has_test_commands(config) is True
 
     def test_auto_detect_from_project(self, tmp_path):
@@ -64,7 +67,7 @@ class TestDetectTestCommands:
 
     def test_package_json_no_test_specified(self, tmp_path):
         """npm init placeholder should be ignored."""
-        pkg = {"scripts": {"test": "echo \"Error: no test specified\" && exit 1"}}
+        pkg = {"scripts": {"test": 'echo "Error: no test specified" && exit 1'}}
         (tmp_path / "package.json").write_text(json.dumps(pkg))
         detected = detect_test_commands(tmp_path)
         assert detected.test_command == ""
@@ -88,7 +91,7 @@ class TestDetectTestCommands:
         assert "go.mod" in detected.source
 
     def test_cargo_toml(self, tmp_path):
-        (tmp_path / "Cargo.toml").write_text("[package]\nname = \"foo\"")
+        (tmp_path / "Cargo.toml").write_text('[package]\nname = "foo"')
         detected = detect_test_commands(tmp_path)
         assert detected.test_command == "cargo test"
         assert "Cargo.toml" in detected.source

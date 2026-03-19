@@ -1,4 +1,5 @@
 """Tests for handoff and conductor context."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -23,7 +24,9 @@ def store(tmp_path: Path) -> TaskStore:
 class TestHandoff:
     def test_create_handoff(self, store: TaskStore):
         create_handoff(
-            store, from_agent="dev-thrall-1", to_agent="dev-thrall-2",
+            store,
+            from_agent="dev-thrall-1",
+            to_agent="dev-thrall-2",
             task_id="wc-t01",
             context="Working on login. Tests pass. Need to add error handling.",
         )

@@ -6,6 +6,7 @@ Creates a tmux session with:
 - Agent log viewer (tail -f selected agent's log)
 - Control pane (answer questions, select agents)
 """
+
 from __future__ import annotations
 
 import os
@@ -46,7 +47,9 @@ def kill_session() -> None:
     )
 
 
-def launch_ui(project_root: Path, requirement: str | None = None, no_conductor: bool = False) -> None:
+def launch_ui(
+    project_root: Path, requirement: str | None = None, no_conductor: bool = False
+) -> None:
     """Launch the tmux-based Warchief UI.
 
     Layout:
@@ -86,90 +89,190 @@ def launch_ui(project_root: Path, requirement: str | None = None, no_conductor: 
 
     # Create the tmux session with the dashboard in the first pane
     dashboard_cmd = f"cd {project_dir} && {warchief_bin} dashboard"
-    subprocess.run([
-        "tmux", "new-session", "-d",
-        "-s", SESSION_NAME,
-        "-x", "200", "-y", "50",
-        dashboard_cmd,
-    ], check=True)
+    subprocess.run(
+        [
+            "tmux",
+            "new-session",
+            "-d",
+            "-s",
+            SESSION_NAME,
+            "-x",
+            "200",
+            "-y",
+            "50",
+            dashboard_cmd,
+        ],
+        check=True,
+    )
 
     # Name the first window
-    subprocess.run([
-        "tmux", "rename-window", "-t", f"{SESSION_NAME}:0", "warchief",
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "rename-window",
+            "-t",
+            f"{SESSION_NAME}:0",
+            "warchief",
+        ]
+    )
 
     # Split bottom-left: orchestrator (watcher)
-    subprocess.run([
-        "tmux", "split-window", "-t", f"{SESSION_NAME}:0",
-        "-v", "-p", "40",
-        start_cmd,
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "split-window",
+            "-t",
+            f"{SESSION_NAME}:0",
+            "-v",
+            "-p",
+            "40",
+            start_cmd,
+        ]
+    )
 
     # Split right side: agent log viewer
-    subprocess.run([
-        "tmux", "split-window", "-t", f"{SESSION_NAME}:0.0",
-        "-h", "-p", "45",
-        f"cd {project_dir} && {warchief_bin} agent-monitor",
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "split-window",
+            "-t",
+            f"{SESSION_NAME}:0.0",
+            "-h",
+            "-p",
+            "45",
+            f"cd {project_dir} && {warchief_bin} agent-monitor",
+        ]
+    )
 
     # Split bottom: control pane
-    subprocess.run([
-        "tmux", "split-window", "-t", f"{SESSION_NAME}:0.1",
-        "-v", "-p", "30",
-        f"cd {project_dir} && {warchief_bin} control",
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "split-window",
+            "-t",
+            f"{SESSION_NAME}:0.1",
+            "-v",
+            "-p",
+            "30",
+            f"cd {project_dir} && {warchief_bin} control",
+        ]
+    )
 
     # Set pane titles
-    for pane_idx, title in [(0, "Dashboard"), (2, "Agent Logs"), (1, "Orchestrator"), (3, "Control")]:
-        subprocess.run([
-            "tmux", "select-pane", "-t", f"{SESSION_NAME}:0.{pane_idx}",
-            "-T", title,
-        ])
+    for pane_idx, title in [
+        (0, "Dashboard"),
+        (2, "Agent Logs"),
+        (1, "Orchestrator"),
+        (3, "Control"),
+    ]:
+        subprocess.run(
+            [
+                "tmux",
+                "select-pane",
+                "-t",
+                f"{SESSION_NAME}:0.{pane_idx}",
+                "-T",
+                title,
+            ]
+        )
 
     # Enable pane borders with titles
-    subprocess.run([
-        "tmux", "set-option", "-t", SESSION_NAME,
-        "pane-border-status", "top",
-    ])
-    subprocess.run([
-        "tmux", "set-option", "-t", SESSION_NAME,
-        "pane-border-format", " #{pane_title} ",
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "set-option",
+            "-t",
+            SESSION_NAME,
+            "pane-border-status",
+            "top",
+        ]
+    )
+    subprocess.run(
+        [
+            "tmux",
+            "set-option",
+            "-t",
+            SESSION_NAME,
+            "pane-border-format",
+            " #{pane_title} ",
+        ]
+    )
 
     # Enable mouse support (click panes, scroll logs, resize panes)
-    subprocess.run([
-        "tmux", "set-option", "-t", SESSION_NAME,
-        "mouse", "on",
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "set-option",
+            "-t",
+            SESSION_NAME,
+            "mouse",
+            "on",
+        ]
+    )
 
     # Increase scrollback buffer for all panes
-    subprocess.run([
-        "tmux", "set-option", "-t", SESSION_NAME,
-        "history-limit", "10000",
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "set-option",
+            "-t",
+            SESSION_NAME,
+            "history-limit",
+            "10000",
+        ]
+    )
 
     # Set status bar with help hints
-    subprocess.run([
-        "tmux", "set-option", "-t", SESSION_NAME,
-        "status-style", "bg=colour235,fg=colour208",
-    ])
-    subprocess.run([
-        "tmux", "set-option", "-t", SESSION_NAME,
-        "status-left", " WARCHIEF ",
-    ])
-    subprocess.run([
-        "tmux", "set-option", "-t", SESSION_NAME,
-        "status-right-length", "80",
-    ])
-    subprocess.run([
-        "tmux", "set-option", "-t", SESSION_NAME,
-        "status-right", " Mouse: scroll/click | Ctrl-B [ scroll | Ctrl-B x kill pane ",
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "set-option",
+            "-t",
+            SESSION_NAME,
+            "status-style",
+            "bg=colour235,fg=colour208",
+        ]
+    )
+    subprocess.run(
+        [
+            "tmux",
+            "set-option",
+            "-t",
+            SESSION_NAME,
+            "status-left",
+            " WARCHIEF ",
+        ]
+    )
+    subprocess.run(
+        [
+            "tmux",
+            "set-option",
+            "-t",
+            SESSION_NAME,
+            "status-right-length",
+            "80",
+        ]
+    )
+    subprocess.run(
+        [
+            "tmux",
+            "set-option",
+            "-t",
+            SESSION_NAME,
+            "status-right",
+            " Mouse: scroll/click | Ctrl-B [ scroll | Ctrl-B x kill pane ",
+        ]
+    )
 
     # Select the control pane as active
-    subprocess.run([
-        "tmux", "select-pane", "-t", f"{SESSION_NAME}:0.3",
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "select-pane",
+            "-t",
+            f"{SESSION_NAME}:0.3",
+        ]
+    )
 
     # Attach to the session
     attach_session()

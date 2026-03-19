@@ -4,6 +4,7 @@ Auto-detects test frameworks from project files (package.json, pyproject.toml,
 Makefile, etc.) or uses explicitly configured commands from config.toml.
 Runs tests against the task's feature branch in a temporary worktree.
 """
+
 from __future__ import annotations
 
 import json
@@ -32,6 +33,7 @@ class TestResult:
 @dataclass
 class DetectedTests:
     """Test commands auto-detected from project files."""
+
     test_command: str = ""
     e2e_command: str = ""
     source: str = ""  # What file/pattern triggered detection
@@ -118,8 +120,10 @@ def detect_test_commands(project_root: Path) -> DetectedTests:
 
     # Playwright
     pw_config_names = [
-        "playwright.config.ts", "playwright.config.js",
-        "playwright.config.mjs", "playwright.config.cjs",
+        "playwright.config.ts",
+        "playwright.config.js",
+        "playwright.config.mjs",
+        "playwright.config.cjs",
     ]
     for pw_cfg in pw_config_names:
         if (project_root / pw_cfg).exists():
@@ -131,8 +135,10 @@ def detect_test_commands(project_root: Path) -> DetectedTests:
     # Cypress
     if not detected.e2e_command:
         cy_config_names = [
-            "cypress.config.ts", "cypress.config.js",
-            "cypress.config.mjs", "cypress.config.cjs",
+            "cypress.config.ts",
+            "cypress.config.js",
+            "cypress.config.mjs",
+            "cypress.config.cjs",
             "cypress.json",
         ]
         for cy_cfg in cy_config_names:
@@ -225,7 +231,10 @@ def run_tests(
         worktree_dir = tempfile.mkdtemp(prefix="warchief-test-")
         add_result = subprocess.run(
             ["git", "worktree", "add", "--detach", worktree_dir, branch],
-            cwd=project_root, capture_output=True, text=True, timeout=30,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if add_result.returncode != 0:
             return TestResult(
@@ -241,7 +250,8 @@ def run_tests(
 
         if not test_cmd and not e2e_cmd:
             return TestResult(
-                passed=True, skipped=True,
+                passed=True,
+                skipped=True,
                 skip_reason="No test framework detected in project or branch",
                 duration_seconds=time.time() - start,
             )
@@ -286,14 +296,18 @@ def run_tests(
             try:
                 subprocess.run(
                     ["git", "worktree", "remove", "--force", worktree_dir],
-                    cwd=project_root, capture_output=True, timeout=15,
+                    cwd=project_root,
+                    capture_output=True,
+                    timeout=15,
                 )
             except Exception:
                 try:
                     shutil.rmtree(worktree_dir, ignore_errors=True)
                     subprocess.run(
                         ["git", "worktree", "prune"],
-                        cwd=project_root, capture_output=True, timeout=10,
+                        cwd=project_root,
+                        capture_output=True,
+                        timeout=10,
                     )
                 except Exception:
                     pass

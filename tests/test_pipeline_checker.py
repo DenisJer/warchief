@@ -1,4 +1,5 @@
 """Tests for pipeline checker."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -34,10 +35,16 @@ def config() -> Config:
 class TestCheckPipeline:
     @patch("warchief.pipeline_checker._past_rejection_cooldown", return_value=True)
     def test_finds_ready_tasks(self, mock_cooldown, store, pipeline, config):
-        store.create_task(TaskRecord(
-            id="wc-r01", title="Ready task", status="open",
-            stage="development", labels=["stage:development"], priority=5,
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-r01",
+                title="Ready task",
+                status="open",
+                stage="development",
+                labels=["stage:development"],
+                priority=5,
+            )
+        )
 
         ready = check_pipeline(store, pipeline, config)
         assert len(ready) == 1
@@ -47,34 +54,58 @@ class TestCheckPipeline:
     @patch("warchief.pipeline_checker._past_rejection_cooldown", return_value=True)
     def test_respects_max_spawns(self, mock_cooldown, store, pipeline, config):
         for i in range(5):
-            store.create_task(TaskRecord(
-                id=f"wc-r{i:02d}", title=f"Task {i}", status="open",
-                stage="development", labels=["stage:development"], priority=5,
-            ))
+            store.create_task(
+                TaskRecord(
+                    id=f"wc-r{i:02d}",
+                    title=f"Task {i}",
+                    status="open",
+                    stage="development",
+                    labels=["stage:development"],
+                    priority=5,
+                )
+            )
 
         ready = check_pipeline(store, pipeline, config, max_spawns=2)
         assert len(ready) == 2
 
     @patch("warchief.pipeline_checker._past_rejection_cooldown", return_value=True)
     def test_priority_sorting(self, mock_cooldown, store, pipeline, config):
-        store.create_task(TaskRecord(
-            id="wc-low", title="Low", status="open",
-            stage="development", labels=["stage:development"], priority=1,
-        ))
-        store.create_task(TaskRecord(
-            id="wc-high", title="High", status="open",
-            stage="development", labels=["stage:development"], priority=9,
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-low",
+                title="Low",
+                status="open",
+                stage="development",
+                labels=["stage:development"],
+                priority=1,
+            )
+        )
+        store.create_task(
+            TaskRecord(
+                id="wc-high",
+                title="High",
+                status="open",
+                stage="development",
+                labels=["stage:development"],
+                priority=9,
+            )
+        )
 
         ready = check_pipeline(store, pipeline, config)
         assert ready[0][0].id == "wc-high"
 
     @patch("warchief.pipeline_checker._past_rejection_cooldown", return_value=True)
     def test_skips_security_without_label(self, mock_cooldown, store, pipeline, config):
-        store.create_task(TaskRecord(
-            id="wc-sec", title="Sec task", status="open",
-            stage="security-review", labels=["stage:security-review"], priority=5,
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-sec",
+                title="Sec task",
+                status="open",
+                stage="security-review",
+                labels=["stage:security-review"],
+                priority=5,
+            )
+        )
 
         ready = check_pipeline(store, pipeline, config)
         assert len(ready) == 0  # No security label
@@ -82,30 +113,45 @@ class TestCheckPipeline:
 
 class TestReleaseReady:
     def test_release_unstaged_task(self, store, pipeline):
-        store.create_task(TaskRecord(
-            id="wc-new", title="New task", status="open",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-new",
+                title="New task",
+                status="open",
+            )
+        )
 
         released = release_ready(store, pipeline)
         assert len(released) == 1
 
         task = store.get_task("wc-new")
-        assert task.stage == "development"
-        assert "stage:development" in task.labels
+        from warchief.state_machine import get_first_stage
+
+        first = get_first_stage("feature")
+        assert task.stage == first
+        assert f"stage:{first}" in task.labels
 
     def test_skip_staged_task(self, store, pipeline):
-        store.create_task(TaskRecord(
-            id="wc-staged", title="Staged", status="open",
-            stage="reviewing",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-staged",
+                title="Staged",
+                status="open",
+                stage="reviewing",
+            )
+        )
 
         released = release_ready(store, pipeline)
         assert len(released) == 0
 
     def test_skip_closed_task(self, store, pipeline):
-        store.create_task(TaskRecord(
-            id="wc-done", title="Done", status="closed",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-done",
+                title="Done",
+                status="closed",
+            )
+        )
 
         released = release_ready(store, pipeline)
         assert len(released) == 0
@@ -123,9 +169,13 @@ class TestSerializePrCreator:
         assert len(pr_creator_tasks) == 1
 
     def test_skips_if_pr_creator_running(self, store):
-        store.register_agent(AgentRecord(
-            id="pr-thrall", role="pr_creator", status="alive",
-        ))
+        store.register_agent(
+            AgentRecord(
+                id="pr-thrall",
+                role="pr_creator",
+                status="alive",
+            )
+        )
         ready = [
             (TaskRecord(id="wc-m1", title="PR 1"), "pr_creator", 10),
         ]

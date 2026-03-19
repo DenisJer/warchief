@@ -1,4 +1,5 @@
 """Communication layer — nudge (ephemeral) and mail (persistent) channels."""
+
 from __future__ import annotations
 
 import logging

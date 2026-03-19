@@ -1,4 +1,5 @@
 """Handoff — session cycling with context preservation (from Gastown)."""
+
 from __future__ import annotations
 
 import logging
@@ -24,12 +25,7 @@ def create_handoff(
     Used when an agent's session is about to die (timeout, context compaction)
     and needs to transfer state to a fresh session.
     """
-    body = (
-        f"HANDOFF from {from_agent}\n"
-        f"Task: {task_id}\n"
-        f"---\n"
-        f"{context}"
-    )
+    body = f"HANDOFF from {from_agent}\nTask: {task_id}\n---\n{context}"
 
     send_mail(
         store=store,

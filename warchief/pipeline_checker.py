@@ -1,4 +1,5 @@
 """Pipeline checker — scans tasks, determines what's ready, respects budgets."""
+
 from __future__ import annotations
 
 import logging
@@ -71,7 +72,9 @@ def release_ready(
         if any(l.startswith("stage:") for l in task.labels):
             continue
 
-        first_stage = pipeline.active_stages(task.labels)[0] if pipeline.active_stages(task.labels) else None
+        first_stage = (
+            pipeline.active_stages(task.labels)[0] if pipeline.active_stages(task.labels) else None
+        )
         if not first_stage:
             continue
 

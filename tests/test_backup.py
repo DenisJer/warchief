@@ -1,4 +1,5 @@
 """Tests for backup and restore."""
+
 from __future__ import annotations
 
 import gzip
@@ -94,6 +95,7 @@ class TestPrune:
         path = create_backup(project_root, store)
         # Manually age the file
         import os
+
         old_time = path.stat().st_mtime - (31 * 86400)
         os.utime(path, (old_time, old_time))
 

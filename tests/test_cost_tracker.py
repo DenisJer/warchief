@@ -1,4 +1,5 @@
 """Tests for cost tracking."""
+
 from __future__ import annotations
 
 import json
@@ -100,8 +101,10 @@ class TestCostLog:
 
     def test_append_and_load(self, project_root: Path):
         entry = CostEntry(
-            agent_id="dev-thrall", task_id="wc-01",
-            role="developer", model="claude-sonnet-4-20250514",
+            agent_id="dev-thrall",
+            task_id="wc-01",
+            role="developer",
+            model="claude-sonnet-4-20250514",
             usage=TokenUsage(input_tokens=1000, output_tokens=500),
             cost_usd=0.0105,
         )
@@ -113,12 +116,17 @@ class TestCostLog:
 
     def test_multiple_entries(self, project_root: Path):
         for i in range(3):
-            append_cost_entry(project_root, CostEntry(
-                agent_id=f"dev-{i}", task_id=f"wc-{i}",
-                role="developer", model="claude-sonnet-4-20250514",
-                usage=TokenUsage(input_tokens=1000),
-                cost_usd=0.003,
-            ))
+            append_cost_entry(
+                project_root,
+                CostEntry(
+                    agent_id=f"dev-{i}",
+                    task_id=f"wc-{i}",
+                    role="developer",
+                    model="claude-sonnet-4-20250514",
+                    usage=TokenUsage(input_tokens=1000),
+                    cost_usd=0.003,
+                ),
+            )
         entries = load_cost_log(project_root)
         assert len(entries) == 3
 
@@ -130,18 +138,28 @@ class TestCostSummary:
         assert summary.entries == []
 
     def test_summary_computation(self, project_root: Path):
-        append_cost_entry(project_root, CostEntry(
-            agent_id="dev-a", task_id="wc-01",
-            role="developer", model="claude-sonnet-4-20250514",
-            usage=TokenUsage(input_tokens=1000, output_tokens=500),
-            cost_usd=0.01,
-        ))
-        append_cost_entry(project_root, CostEntry(
-            agent_id="rev-b", task_id="wc-01",
-            role="reviewer", model="claude-sonnet-4-20250514",
-            usage=TokenUsage(input_tokens=2000, output_tokens=800),
-            cost_usd=0.02,
-        ))
+        append_cost_entry(
+            project_root,
+            CostEntry(
+                agent_id="dev-a",
+                task_id="wc-01",
+                role="developer",
+                model="claude-sonnet-4-20250514",
+                usage=TokenUsage(input_tokens=1000, output_tokens=500),
+                cost_usd=0.01,
+            ),
+        )
+        append_cost_entry(
+            project_root,
+            CostEntry(
+                agent_id="rev-b",
+                task_id="wc-01",
+                role="reviewer",
+                model="claude-sonnet-4-20250514",
+                usage=TokenUsage(input_tokens=2000, output_tokens=800),
+                cost_usd=0.02,
+            ),
+        )
 
         summary = compute_cost_summary(project_root)
         assert summary.total_cost_usd == pytest.approx(0.03)
@@ -165,12 +183,11 @@ class TestFormatCostSummary:
             total_output_tokens=50000,
             by_model={"sonnet": 1.0, "haiku": 0.5},
             by_role={"developer": 1.0, "reviewer": 0.5},
-            entries=[CostEntry("a", "t", "developer", "sonnet",
-                              TokenUsage(), 1.5)],
+            entries=[CostEntry("a", "t", "developer", "sonnet", TokenUsage(), 1.5)],
         )
         output = format_cost_summary(summary)
         assert "100,000" in output  # in tokens
-        assert "50,000" in output   # out tokens
+        assert "50,000" in output  # out tokens
         assert "developer" in output
 
 
@@ -181,10 +198,17 @@ class TestBudget:
         assert remaining == 10.0
 
     def test_over_budget(self, project_root: Path):
-        append_cost_entry(project_root, CostEntry(
-            agent_id="a", task_id="t", role="dev", model="m",
-            usage=TokenUsage(), cost_usd=15.0,
-        ))
+        append_cost_entry(
+            project_root,
+            CostEntry(
+                agent_id="a",
+                task_id="t",
+                role="dev",
+                model="m",
+                usage=TokenUsage(),
+                cost_usd=15.0,
+            ),
+        )
         within, remaining = check_budget(project_root, 10.0)
         assert within is False
         assert remaining == -5.0

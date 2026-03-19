@@ -1,4 +1,5 @@
 """Metrics — compute pipeline statistics from events."""
+
 from __future__ import annotations
 
 import time
@@ -96,12 +97,14 @@ def compute_task_trace(store: TaskStore, task_id: str) -> TaskTrace | None:
             to_stage = event.details.get("to_stage")
 
             if from_stage and current_stage_start:
-                trace.stages.append({
-                    "stage": from_stage,
-                    "duration": event.created_at - current_stage_start,
-                    "entered_at": current_stage_start,
-                    "exited_at": event.created_at,
-                })
+                trace.stages.append(
+                    {
+                        "stage": from_stage,
+                        "duration": event.created_at - current_stage_start,
+                        "entered_at": current_stage_start,
+                        "exited_at": event.created_at,
+                    }
+                )
 
             current_stage = to_stage
             current_stage_start = event.created_at
@@ -119,12 +122,14 @@ def compute_task_trace(store: TaskStore, task_id: str) -> TaskTrace | None:
     # Include current stage if still in progress
     if current_stage and current_stage_start:
         end_time = task.closed_at or time.time()
-        trace.stages.append({
-            "stage": current_stage,
-            "duration": end_time - current_stage_start,
-            "entered_at": current_stage_start,
-            "exited_at": end_time,
-        })
+        trace.stages.append(
+            {
+                "stage": current_stage,
+                "duration": end_time - current_stage_start,
+                "entered_at": current_stage_start,
+                "exited_at": end_time,
+            }
+        )
 
     trace.total_duration = sum(s["duration"] for s in trace.stages)
     return trace

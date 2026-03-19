@@ -3,6 +3,7 @@
 Every function here is pure: no DB calls, no subprocess calls, no I/O.
 Input: current state. Output: what should change.
 """
+
 from __future__ import annotations
 
 from warchief.config import TYPE_TO_PIPELINE, PIPELINE_FEATURE
@@ -82,8 +83,8 @@ def dispatch_transition(
         )
 
     # --- Agent crashed (non-zero exit or signal death) ---
-    agent_crashed = (agent_exit_code is not None and agent_exit_code != 0)
-    agent_died_unknown = (agent_exit_code is None)
+    agent_crashed = agent_exit_code is not None and agent_exit_code != 0
+    agent_died_unknown = agent_exit_code is None
 
     if agent_crashed and task_status == "in_progress":
         if crash_count < max_crashes:
@@ -121,9 +122,14 @@ def dispatch_transition(
     # --- DEVELOPMENT stage ---
     if task_stage == "development":
         return _handle_development(
-            task_status, task_labels, stage_label,
-            has_rejected, branch_has_commits,
-            rejection_count, max_rejections, spawn_count,
+            task_status,
+            task_labels,
+            stage_label,
+            has_rejected,
+            branch_has_commits,
+            rejection_count,
+            max_rejections,
+            spawn_count,
             task_type,
         )
 
@@ -133,7 +139,9 @@ def dispatch_transition(
 
     # --- SECURITY-REVIEW stage ---
     if task_stage == "security-review":
-        return _handle_security_review(task_status, task_labels, stage_label, has_rejected, task_type)
+        return _handle_security_review(
+            task_status, task_labels, stage_label, has_rejected, task_type
+        )
 
     # --- TESTING stage ---
     if task_stage == "testing":
@@ -303,7 +311,10 @@ CONFIG_EXTENSIONS = {".toml", ".yaml", ".yml", ".json", ".ini", ".cfg", ".conf"}
 
 def should_skip_testing(changed_files: list[str]) -> bool:
     """Returns True if only non-code files were changed."""
+    if not changed_files:
+        return False  # Unknown changes — don't skip
     from warchief.config import FRONTEND_EXTENSIONS
+
     for f in changed_files:
         ext = "." + f.rsplit(".", 1)[-1] if "." in f else ""
         ext_lower = ext.lower()
@@ -339,7 +350,9 @@ def _handle_testing(
     if has_rejected:
         return TransitionResult(
             status="open",
-            remove_labels=["rejected", "needs-testing", stage_label] if stage_label else ["rejected", "needs-testing"],
+            remove_labels=["rejected", "needs-testing", stage_label]
+            if stage_label
+            else ["rejected", "needs-testing"],
             add_labels=["stage:development"],
             next_stage="development",
         )

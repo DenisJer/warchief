@@ -1,4 +1,5 @@
 """Merge verification — confirms branches are properly merged."""
+
 from __future__ import annotations
 
 import logging
@@ -50,9 +51,10 @@ def get_merge_status(
     # Get ahead/behind counts
     try:
         result = subprocess.run(
-            ["git", "rev-list", "--left-right", "--count",
-             f"{base_branch}...{feature_branch}"],
-            cwd=project_root, capture_output=True, text=True,
+            ["git", "rev-list", "--left-right", "--count", f"{base_branch}...{feature_branch}"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
         )
         if result.returncode == 0:
             parts = result.stdout.strip().split()
@@ -66,10 +68,16 @@ def get_merge_status(
     if not status["merged"] and status["ahead"] > 0:
         try:
             result = subprocess.run(
-                ["git", "merge-tree",
-                 f"$(git merge-base {base_branch} {feature_branch})",
-                 base_branch, feature_branch],
-                cwd=project_root, capture_output=True, text=True,
+                [
+                    "git",
+                    "merge-tree",
+                    f"$(git merge-base {base_branch} {feature_branch})",
+                    base_branch,
+                    feature_branch,
+                ],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
                 shell=True,
             )
             status["conflicts"] = "conflict" in result.stdout.lower()

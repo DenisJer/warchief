@@ -1,4 +1,5 @@
 """Tests for TaskStore — CRUD, concurrency, optimistic locking."""
+
 from __future__ import annotations
 
 import threading
@@ -120,14 +121,33 @@ class TestOptimisticLocking:
 class TestTaskQueries:
     def _seed(self, store: TaskStore):
         tasks = [
-            TaskRecord(id="wc-q01", title="Task 1", status="open", stage="development",
-                       labels=["stage:development"], priority=5),
-            TaskRecord(id="wc-q02", title="Task 2", status="open", stage="reviewing",
-                       labels=["stage:reviewing", "security"], priority=8),
-            TaskRecord(id="wc-q03", title="Task 3", status="in_progress", stage="development",
-                       labels=["stage:development"], priority=3),
-            TaskRecord(id="wc-q04", title="Task 4", status="blocked", stage=None,
-                       labels=[], priority=1),
+            TaskRecord(
+                id="wc-q01",
+                title="Task 1",
+                status="open",
+                stage="development",
+                labels=["stage:development"],
+                priority=5,
+            ),
+            TaskRecord(
+                id="wc-q02",
+                title="Task 2",
+                status="open",
+                stage="reviewing",
+                labels=["stage:reviewing", "security"],
+                priority=8,
+            ),
+            TaskRecord(
+                id="wc-q03",
+                title="Task 3",
+                status="in_progress",
+                stage="development",
+                labels=["stage:development"],
+                priority=3,
+            ),
+            TaskRecord(
+                id="wc-q04", title="Task 4", status="blocked", stage=None, labels=[], priority=1
+            ),
         ]
         for t in tasks:
             store.create_task(t)
@@ -177,8 +197,11 @@ class TestTaskQueries:
 class TestAgentCRUD:
     def test_register_and_get(self, store: TaskStore):
         agent = AgentRecord(
-            id="agent-dev-01", role="developer", status="alive",
-            current_task="wc-test01", pid=12345,
+            id="agent-dev-01",
+            role="developer",
+            status="alive",
+            current_task="wc-test01",
+            pid=12345,
         )
         store.register_agent(agent)
 
@@ -223,8 +246,12 @@ class TestAgentCRUD:
 class TestMessages:
     def test_create_and_read(self, store: TaskStore):
         msg = MessageRecord(
-            id="msg-01", to_agent="agent-dev-01", body="Fix the bug",
-            from_agent="conductor", message_type="instruction", persistent=True,
+            id="msg-01",
+            to_agent="agent-dev-01",
+            body="Fix the bug",
+            from_agent="conductor",
+            message_type="instruction",
+            persistent=True,
         )
         store.create_message(msg)
 
@@ -234,7 +261,9 @@ class TestMessages:
 
     def test_mark_read(self, store: TaskStore):
         msg = MessageRecord(
-            id="msg-02", to_agent="agent-dev-01", body="Deploy it",
+            id="msg-02",
+            to_agent="agent-dev-01",
+            body="Deploy it",
             persistent=True,
         )
         store.create_message(msg)
@@ -245,7 +274,9 @@ class TestMessages:
 
     def test_non_persistent_not_in_mail(self, store: TaskStore):
         msg = MessageRecord(
-            id="msg-03", to_agent="agent-dev-01", body="Ephemeral",
+            id="msg-03",
+            to_agent="agent-dev-01",
+            body="Ephemeral",
             persistent=False,
         )
         store.create_message(msg)
@@ -275,9 +306,12 @@ class TestEvents:
 
     def test_events_limit(self, store: TaskStore):
         for i in range(10):
-            store.log_event(EventRecord(
-                event_type="heartbeat", task_id="wc-test01",
-            ))
+            store.log_event(
+                EventRecord(
+                    event_type="heartbeat",
+                    task_id="wc-test01",
+                )
+            )
 
         events = store.get_events(task_id="wc-test01", limit=5)
         assert len(events) == 5

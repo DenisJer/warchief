@@ -1,4 +1,5 @@
 """Shared fixtures for Warchief tests."""
+
 from __future__ import annotations
 
 import pytest

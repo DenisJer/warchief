@@ -1,4 +1,5 @@
 """Tests for prime context generation."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,9 +21,11 @@ def store(tmp_path: Path) -> TaskStore:
 class TestBuildPrimeContext:
     def test_empty_for_fresh_task(self, store: TaskStore, tmp_path: Path):
         task = TaskRecord(
-            id="wc-t01", title="Build login",
+            id="wc-t01",
+            title="Build login",
             description="Add OAuth login flow",
-            status="open", stage="development",
+            status="open",
+            stage="development",
         )
         store.create_task(task)
 
@@ -31,8 +34,11 @@ class TestBuildPrimeContext:
 
     def test_includes_previous_attempts(self, store: TaskStore, tmp_path: Path):
         task = TaskRecord(
-            id="wc-t01", title="Build login",
-            status="open", spawn_count=2, crash_count=1,
+            id="wc-t01",
+            title="Build login",
+            status="open",
+            spawn_count=2,
+            crash_count=1,
         )
         store.create_task(task)
 
@@ -43,8 +49,10 @@ class TestBuildPrimeContext:
     def test_includes_deps(self, store: TaskStore, tmp_path: Path):
         store.create_task(TaskRecord(id="wc-dep1", title="Auth module", status="closed"))
         task = TaskRecord(
-            id="wc-t01", title="Login page",
-            deps=["wc-dep1"], status="open",
+            id="wc-t01",
+            title="Login page",
+            deps=["wc-dep1"],
+            status="open",
         )
         store.create_task(task)
 
@@ -55,14 +63,20 @@ class TestBuildPrimeContext:
 
     def test_includes_rejection_events(self, store: TaskStore, tmp_path: Path):
         task = TaskRecord(
-            id="wc-t01", title="Login", rejection_count=2, spawn_count=2,
+            id="wc-t01",
+            title="Login",
+            rejection_count=2,
+            spawn_count=2,
         )
         store.create_task(task)
 
-        store.log_event(EventRecord(
-            event_type="block", task_id="wc-t01",
-            details={"failure_reason": "Missing error handling"},
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="block",
+                task_id="wc-t01",
+                details={"failure_reason": "Missing error handling"},
+            )
+        )
 
         ctx = build_prime_context(task, "developer", store, tmp_path)
         assert "Missing error handling" in ctx
@@ -73,8 +87,10 @@ class TestBuildPrimeContext:
 
         # Create scratchpad with handoff notes
         from warchief.scratchpad import append_scratchpad
-        append_scratchpad(tmp_path, "wc-t01", "developer", "dev-thrall",
-                         "Implemented login form. All tests pass.")
+
+        append_scratchpad(
+            tmp_path, "wc-t01", "developer", "dev-thrall", "Implemented login form. All tests pass."
+        )
 
         ctx = build_prime_context(task, "reviewer", store, tmp_path)
         assert "Scratchpad" in ctx

@@ -6,6 +6,7 @@ Before an agent begins work, this module gathers relevant context:
 - Crash/failure information
 - Related task status (dependencies)
 """
+
 from __future__ import annotations
 
 import logging
@@ -28,9 +29,11 @@ def build_prime_context(
 
     # Previous attempt info
     if task.spawn_count > 0:
-        sections.append(f"## Previous Attempts\n"
-                       f"This task has been attempted {task.spawn_count} time(s) before.\n"
-                       f"Crashes: {task.crash_count} | Rejections: {task.rejection_count}")
+        sections.append(
+            f"## Previous Attempts\n"
+            f"This task has been attempted {task.spawn_count} time(s) before.\n"
+            f"Crashes: {task.crash_count} | Rejections: {task.rejection_count}"
+        )
 
     # Get relevant events for this task (rejections, blocks, crashes)
     events = store.get_events(limit=50)
@@ -56,7 +59,11 @@ def build_prime_context(
     if handoff_messages:
         sections.append("## Handoff from Previous Stage")
         for msg in handoff_messages[-2:]:  # Last 2 handoffs
-            body = msg.body if len(msg.body) <= _MAX_MSG_CHARS else ("...\n" + msg.body[-_MAX_MSG_CHARS:])
+            body = (
+                msg.body
+                if len(msg.body) <= _MAX_MSG_CHARS
+                else ("...\n" + msg.body[-_MAX_MSG_CHARS:])
+            )
             sections.append(body)
 
     # Rejection feedback — focused summary instead of raw logs (Task 5)
@@ -64,11 +71,16 @@ def build_prime_context(
     if rejection_comments:
         sections.append("## Rejection Feedback")
         for msg in rejection_comments[-2:]:  # Last 2 rejections
-            body = msg.body if len(msg.body) <= _MAX_MSG_CHARS else ("...\n" + msg.body[-_MAX_MSG_CHARS:])
+            body = (
+                msg.body
+                if len(msg.body) <= _MAX_MSG_CHARS
+                else ("...\n" + msg.body[-_MAX_MSG_CHARS:])
+            )
             sections.append(body)
 
     # Task scratchpad — structured handoff notes from previous agents
     from warchief.scratchpad import read_scratchpad_for_role
+
     scratchpad = read_scratchpad_for_role(project_root, task.id, role)
     if scratchpad:
         sections.append(f"## Scratchpad (handoff notes from previous agents)\n{scratchpad}")
@@ -78,7 +90,11 @@ def build_prime_context(
     if qa_messages:
         qa_lines = ["## Messages from User"]
         for msg in qa_messages:
-            body = msg.body if len(msg.body) <= _MAX_MSG_CHARS else ("...\n" + msg.body[-_MAX_MSG_CHARS:])
+            body = (
+                msg.body
+                if len(msg.body) <= _MAX_MSG_CHARS
+                else ("...\n" + msg.body[-_MAX_MSG_CHARS:])
+            )
             if msg.message_type == "question":
                 qa_lines.append(f"Q: {body}")
             elif msg.message_type == "answer":
@@ -100,7 +116,9 @@ def build_prime_context(
             if all_closed:
                 # Lead task after rejection — responsible for ALL code on the branch
                 lines.append("You are the GROUP LEAD. All sibling tasks are closed.")
-                lines.append("Their code is on this branch — you are responsible for fixing ALL issues:")
+                lines.append(
+                    "Their code is on this branch — you are responsible for fixing ALL issues:"
+                )
                 for s in siblings:
                     lines.append(f"- {s.title}")
             else:
@@ -114,9 +132,11 @@ def build_prime_context(
                         lines.append(f"- {s.id}: {s.title}")
             sections.append("\n".join(lines))
         elif siblings and role in ("reviewer", "security_reviewer"):
-            lines = ["## Group Context — Review ALL changes as a cohesive unit",
-                     "This branch contains work from multiple sub-tasks. "
-                     "Review the combined changes holistically:"]
+            lines = [
+                "## Group Context — Review ALL changes as a cohesive unit",
+                "This branch contains work from multiple sub-tasks. "
+                "Review the combined changes holistically:",
+            ]
             for s in siblings:
                 lines.append(f"- {s.id}: {s.title}")
             lines.append(f"- {task.id}: {task.title} (this task)")
@@ -131,6 +151,25 @@ def build_prime_context(
                 sections.append(f"- {dep_id}: {dep.title} [{dep.status}]")
             else:
                 sections.append(f"- {dep_id}: (not found)")
+
+    # Changed files context for reviewers and testers
+    if role in ("reviewer", "security_reviewer", "tester"):
+        import subprocess
+
+        try:
+            branch = f"feature/{task.group_id}" if task.group_id else f"feature/{task.id}"
+            base = "main"
+            result = subprocess.run(
+                ["git", "diff", "--stat", f"{base}...{branch}"],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                sections.append(f"## Changed Files\n```\n{result.stdout.strip()}\n```")
+        except (subprocess.TimeoutExpired, OSError):
+            pass
 
     if not sections:
         return ""

@@ -1,4 +1,5 @@
 """Diagnostics — log extraction and failure formatting."""
+
 from __future__ import annotations
 
 import logging
@@ -16,18 +17,27 @@ def get_recent_failures(store: TaskStore, limit: int = 20) -> list[dict]:
     failures: list[dict] = []
 
     for event in events:
-        if event.event_type in ("block", "crash", "zombie", "zombie_recovery",
-                                 "orphan_recovery", "mass_death", "reject"):
+        if event.event_type in (
+            "block",
+            "crash",
+            "zombie",
+            "zombie_recovery",
+            "orphan_recovery",
+            "mass_death",
+            "reject",
+        ):
             task = store.get_task(event.task_id) if event.task_id else None
-            failures.append({
-                "event_type": event.event_type,
-                "task_id": event.task_id,
-                "task_title": task.title if task else None,
-                "agent_id": event.agent_id,
-                "details": event.details,
-                "timestamp": event.created_at,
-                "actor": event.actor,
-            })
+            failures.append(
+                {
+                    "event_type": event.event_type,
+                    "task_id": event.task_id,
+                    "task_title": task.title if task else None,
+                    "agent_id": event.agent_id,
+                    "details": event.details,
+                    "timestamp": event.created_at,
+                    "actor": event.actor,
+                }
+            )
 
         if len(failures) >= limit:
             break
@@ -45,7 +55,9 @@ def format_failure_report(failures: list[dict]) -> str:
     lines.append("=" * 60)
 
     for f in failures:
-        task_str = f"{f['task_id']} ({f['task_title']})" if f["task_title"] else f["task_id"] or "n/a"
+        task_str = (
+            f"{f['task_id']} ({f['task_title']})" if f["task_title"] else f["task_id"] or "n/a"
+        )
         lines.append(f"\n  [{f['event_type'].upper()}] Task: {task_str}")
         if f["agent_id"]:
             lines.append(f"    Agent: {f['agent_id']}")

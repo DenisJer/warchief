@@ -1,4 +1,5 @@
 """Backup and restore — JSONL export with compression."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -51,8 +52,7 @@ def create_backup(project_root: Path, store: TaskStore) -> Path:
             record = {"_type": "agent", **dataclasses.asdict(agent)}
             f.write(json.dumps(record, default=str) + "\n")
 
-    log.info("Backup created: %s (%d tasks, %d events)",
-             backup_path, len(tasks), len(events))
+    log.info("Backup created: %s (%d tasks, %d events)", backup_path, len(tasks), len(events))
     return backup_path
 
 
@@ -75,10 +75,9 @@ def restore_backup(project_root: Path, store: TaskStore, backup_path: Path) -> d
             rtype = record.pop("_type", None)
 
             if rtype == "task":
-                task = TaskRecord(**{
-                    k: v for k, v in record.items()
-                    if k in TaskRecord.__dataclass_fields__
-                })
+                task = TaskRecord(
+                    **{k: v for k, v in record.items() if k in TaskRecord.__dataclass_fields__}
+                )
                 try:
                     store.create_task(task)
                     counts["tasks"] += 1
@@ -86,18 +85,16 @@ def restore_backup(project_root: Path, store: TaskStore, backup_path: Path) -> d
                     log.debug("Skipping duplicate task %s", record.get("id"))
 
             elif rtype == "event":
-                event = EventRecord(**{
-                    k: v for k, v in record.items()
-                    if k in EventRecord.__dataclass_fields__
-                })
+                event = EventRecord(
+                    **{k: v for k, v in record.items() if k in EventRecord.__dataclass_fields__}
+                )
                 store.log_event(event)
                 counts["events"] += 1
 
             elif rtype == "agent":
-                agent = AgentRecord(**{
-                    k: v for k, v in record.items()
-                    if k in AgentRecord.__dataclass_fields__
-                })
+                agent = AgentRecord(
+                    **{k: v for k, v in record.items() if k in AgentRecord.__dataclass_fields__}
+                )
                 store.register_agent(agent)
                 counts["agents"] += 1
 

@@ -1,4 +1,5 @@
 """Tests for recovery procedures."""
+
 from __future__ import annotations
 
 import time
@@ -34,10 +35,14 @@ def store(project_root: Path) -> TaskStore:
 
 class TestRecoverOrphans:
     def test_recover_orphaned_task(self, store: TaskStore):
-        store.create_task(TaskRecord(
-            id="wc-orph", title="Orphan", status="in_progress",
-            assigned_agent="dev-ghost",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-orph",
+                title="Orphan",
+                status="in_progress",
+                assigned_agent="dev-ghost",
+            )
+        )
         recovered = recover_orphans(store)
         assert "wc-orph" in recovered
 
@@ -54,14 +59,23 @@ class TestRecoverOrphans:
 class TestRecoverZombies:
     @patch("warchief.recovery._is_process_alive", return_value=False)
     def test_recover_dead_agent(self, mock_alive, store: TaskStore, project_root: Path):
-        store.register_agent(AgentRecord(
-            id="dev-dead", role="developer", status="alive",
-            current_task="wc-t01", pid=99999,
-        ))
-        store.create_task(TaskRecord(
-            id="wc-t01", title="Task", status="in_progress",
-            assigned_agent="dev-dead",
-        ))
+        store.register_agent(
+            AgentRecord(
+                id="dev-dead",
+                role="developer",
+                status="alive",
+                current_task="wc-t01",
+                pid=99999,
+            )
+        )
+        store.create_task(
+            TaskRecord(
+                id="wc-t01",
+                title="Task",
+                status="in_progress",
+                assigned_agent="dev-dead",
+            )
+        )
 
         zombies = recover_zombie_agents(store, project_root, threshold=0)
         assert "dev-dead" in zombies
@@ -75,9 +89,14 @@ class TestRecoverZombies:
     @patch("warchief.recovery._is_process_alive", return_value=True)
     @patch("warchief.recovery.is_zombie", return_value=False)
     def test_alive_agent_not_recovered(self, mock_zombie, mock_alive, store, project_root):
-        store.register_agent(AgentRecord(
-            id="dev-alive", role="developer", status="alive", pid=12345,
-        ))
+        store.register_agent(
+            AgentRecord(
+                id="dev-alive",
+                role="developer",
+                status="alive",
+                pid=12345,
+            )
+        )
         zombies = recover_zombie_agents(store, project_root)
         assert zombies == []
 
@@ -95,9 +114,13 @@ class TestRecoverWorktrees:
         wt_dir = project_root / ".warchief-worktrees" / "dev-active"
         wt_dir.mkdir(parents=True)
 
-        store.register_agent(AgentRecord(
-            id="dev-active", role="developer", status="alive",
-        ))
+        store.register_agent(
+            AgentRecord(
+                id="dev-active",
+                role="developer",
+                status="alive",
+            )
+        )
 
         cleaned = recover_worktrees(store, project_root)
         assert "dev-active" not in cleaned
@@ -106,10 +129,14 @@ class TestRecoverWorktrees:
 class TestFullRecovery:
     @patch("warchief.recovery._is_process_alive", return_value=False)
     def test_runs_all(self, mock_alive, store: TaskStore, project_root: Path):
-        store.create_task(TaskRecord(
-            id="wc-orph2", title="Orphan", status="in_progress",
-            assigned_agent="dev-ghost2",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-orph2",
+                title="Orphan",
+                status="in_progress",
+                assigned_agent="dev-ghost2",
+            )
+        )
 
         summary = run_full_recovery(store, project_root)
         assert "orphaned_tasks" in summary

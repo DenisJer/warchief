@@ -1,4 +1,5 @@
 """Tests for event feed."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -23,13 +24,20 @@ class TestFeed:
         assert "No events" in output
 
     def test_feed_with_events(self, store: TaskStore):
-        store.log_event(EventRecord(
-            event_type="spawn", task_id="wc-01", agent_id="dev-thrall",
-        ))
-        store.log_event(EventRecord(
-            event_type="advance", task_id="wc-01",
-            details={"from_stage": "development", "to_stage": "reviewing"},
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="spawn",
+                task_id="wc-01",
+                agent_id="dev-thrall",
+            )
+        )
+        store.log_event(
+            EventRecord(
+                event_type="advance",
+                task_id="wc-01",
+                details={"from_stage": "development", "to_stage": "reviewing"},
+            )
+        )
 
         output = render_feed(store)
         assert "Activity Feed" in output

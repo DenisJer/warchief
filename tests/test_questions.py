@@ -1,4 +1,5 @@
 """Tests for the human-in-the-loop Q&A mechanism."""
+
 from __future__ import annotations
 
 import os
@@ -57,8 +58,10 @@ class TestAgentUpdateQuestion:
     def test_question_stores_message_and_label(self, store, project_root):
         """Simulate what cmd_agent_update does when --question is passed."""
         task = TaskRecord(
-            id="wc-q01", title="Create supabase schema",
-            status="in_progress", stage="development",
+            id="wc-q01",
+            title="Create supabase schema",
+            status="in_progress",
+            stage="development",
         )
         store.create_task(task)
 
@@ -70,20 +73,24 @@ class TestAgentUpdateQuestion:
             current_labels.append("question")
         updates["labels"] = current_labels
 
-        store.create_message(MessageRecord(
-            id="",
-            from_agent="wc-q01",
-            to_agent="user",
-            message_type="question",
-            body="How should I handle supabase schema?",
-            persistent=True,
-        ))
-        store.log_event(EventRecord(
-            event_type="question",
-            task_id="wc-q01",
-            details={"question": "How should I handle supabase schema?"},
-            actor="wc-q01",
-        ))
+        store.create_message(
+            MessageRecord(
+                id="",
+                from_agent="wc-q01",
+                to_agent="user",
+                message_type="question",
+                body="How should I handle supabase schema?",
+                persistent=True,
+            )
+        )
+        store.log_event(
+            EventRecord(
+                event_type="question",
+                task_id="wc-q01",
+                details={"question": "How should I handle supabase schema?"},
+                actor="wc-q01",
+            )
+        )
         store.update_task("wc-q01", **updates)
 
         # Verify
@@ -104,39 +111,47 @@ class TestAnswerCommand:
 
     def test_answer_removes_label_and_unblocks(self, store):
         task = TaskRecord(
-            id="wc-a01", title="Test task",
-            status="blocked", stage="development",
+            id="wc-a01",
+            title="Test task",
+            status="blocked",
+            stage="development",
             labels=["stage:development", "question"],
         )
         store.create_task(task)
 
         # Store a question first
-        store.create_message(MessageRecord(
-            id="",
-            from_agent="wc-a01",
-            to_agent="user",
-            message_type="question",
-            body="How to proceed?",
-            persistent=True,
-        ))
+        store.create_message(
+            MessageRecord(
+                id="",
+                from_agent="wc-a01",
+                to_agent="user",
+                message_type="question",
+                body="How to proceed?",
+                persistent=True,
+            )
+        )
 
         # Simulate answer command
-        store.create_message(MessageRecord(
-            id="",
-            from_agent="user",
-            to_agent="wc-a01",
-            message_type="answer",
-            body="Use supabase CLI",
-            persistent=True,
-        ))
+        store.create_message(
+            MessageRecord(
+                id="",
+                from_agent="user",
+                to_agent="wc-a01",
+                message_type="answer",
+                body="Use supabase CLI",
+                persistent=True,
+            )
+        )
         new_labels = [l for l in task.labels if l != "question"]
         store.update_task("wc-a01", status="open", labels=new_labels)
-        store.log_event(EventRecord(
-            event_type="answer",
-            task_id="wc-a01",
-            details={"answer": "Use supabase CLI"},
-            actor="user",
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="answer",
+                task_id="wc-a01",
+                details={"answer": "Use supabase CLI"},
+                actor="user",
+            )
+        )
 
         # Verify
         task = store.get_task("wc-a01")
@@ -162,23 +177,41 @@ class TestGetTaskMessages:
         store.create_task(TaskRecord(id="wc-m02", title="Test"))
 
         # Question
-        store.create_message(MessageRecord(
-            id="", from_agent="wc-m02", to_agent="user",
-            message_type="question", body="Q1",
-            persistent=True, created_at=100.0,
-        ))
+        store.create_message(
+            MessageRecord(
+                id="",
+                from_agent="wc-m02",
+                to_agent="user",
+                message_type="question",
+                body="Q1",
+                persistent=True,
+                created_at=100.0,
+            )
+        )
         # Answer
-        store.create_message(MessageRecord(
-            id="", from_agent="user", to_agent="wc-m02",
-            message_type="answer", body="A1",
-            persistent=True, created_at=200.0,
-        ))
+        store.create_message(
+            MessageRecord(
+                id="",
+                from_agent="user",
+                to_agent="wc-m02",
+                message_type="answer",
+                body="A1",
+                persistent=True,
+                created_at=200.0,
+            )
+        )
         # Second question
-        store.create_message(MessageRecord(
-            id="", from_agent="wc-m02", to_agent="user",
-            message_type="question", body="Q2",
-            persistent=True, created_at=300.0,
-        ))
+        store.create_message(
+            MessageRecord(
+                id="",
+                from_agent="wc-m02",
+                to_agent="user",
+                message_type="question",
+                body="Q2",
+                persistent=True,
+                created_at=300.0,
+            )
+        )
 
         messages = store.get_task_messages("wc-m02")
         assert len(messages) == 3
@@ -192,21 +225,34 @@ class TestPrimeContextQA:
 
     def test_includes_qa_history(self, store, project_root):
         task = TaskRecord(
-            id="wc-p01", title="Build schema",
-            status="open", stage="development", spawn_count=1,
+            id="wc-p01",
+            title="Build schema",
+            status="open",
+            stage="development",
+            spawn_count=1,
         )
         store.create_task(task)
 
-        store.create_message(MessageRecord(
-            id="", from_agent="wc-p01", to_agent="user",
-            message_type="question", body="How to handle schema?",
-            persistent=True,
-        ))
-        store.create_message(MessageRecord(
-            id="", from_agent="user", to_agent="wc-p01",
-            message_type="answer", body="Use supabase CLI",
-            persistent=True,
-        ))
+        store.create_message(
+            MessageRecord(
+                id="",
+                from_agent="wc-p01",
+                to_agent="user",
+                message_type="question",
+                body="How to handle schema?",
+                persistent=True,
+            )
+        )
+        store.create_message(
+            MessageRecord(
+                id="",
+                from_agent="user",
+                to_agent="wc-p01",
+                message_type="answer",
+                body="Use supabase CLI",
+                persistent=True,
+            )
+        )
 
         ctx = build_prime_context(task, "developer", store, project_root)
         assert "## Messages from User" in ctx
@@ -215,8 +261,10 @@ class TestPrimeContextQA:
 
     def test_no_qa_section_when_no_messages(self, store, project_root):
         task = TaskRecord(
-            id="wc-p02", title="No questions",
-            status="open", stage="development",
+            id="wc-p02",
+            title="No questions",
+            status="open",
+            stage="development",
         )
         store.create_task(task)
 
@@ -229,25 +277,33 @@ class TestAutoRecoverySkipsQuestions:
 
     def test_plan_recovery_returns_none_for_question(self, watcher, store):
         task = TaskRecord(
-            id="wc-qr1", title="Question task",
-            status="blocked", stage="development",
+            id="wc-qr1",
+            title="Question task",
+            status="blocked",
+            stage="development",
             labels=["stage:development", "question"],
         )
         result = watcher._plan_recovery(task, "Some failure reason")
         assert result is None
 
     def test_auto_recover_skips_question_tasks(self, watcher, store):
-        store.create_task(TaskRecord(
-            id="wc-qr2", title="Question blocked",
-            status="blocked", stage="development",
-            labels=["stage:development", "question"],
-        ))
-        store.log_event(EventRecord(
-            event_type="block",
-            task_id="wc-qr2",
-            details={"failure_reason": "Spawn limit reached (20/20)"},
-            actor="watcher",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-qr2",
+                title="Question blocked",
+                status="blocked",
+                stage="development",
+                labels=["stage:development", "question"],
+            )
+        )
+        store.log_event(
+            EventRecord(
+                event_type="block",
+                task_id="wc-qr2",
+                details={"failure_reason": "Spawn limit reached (20/20)"},
+                actor="watcher",
+            )
+        )
 
         watcher._tick_count = 6
         watcher._auto_recover_blocked()
@@ -258,18 +314,24 @@ class TestAutoRecoverySkipsQuestions:
 
     def test_auto_recover_works_for_non_question_tasks(self, watcher, store):
         """Ensure normal blocked tasks are still auto-recovered."""
-        store.create_task(TaskRecord(
-            id="wc-qr3", title="Normal blocked",
-            status="blocked", stage="development",
-            labels=["stage:development"],
-            spawn_count=20,
-        ))
-        store.log_event(EventRecord(
-            event_type="block",
-            task_id="wc-qr3",
-            details={"failure_reason": "Spawn limit reached (20/20)"},
-            actor="watcher",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-qr3",
+                title="Normal blocked",
+                status="blocked",
+                stage="development",
+                labels=["stage:development"],
+                spawn_count=20,
+            )
+        )
+        store.log_event(
+            EventRecord(
+                event_type="block",
+                task_id="wc-qr3",
+                details={"failure_reason": "Spawn limit reached (20/20)"},
+                actor="watcher",
+            )
+        )
 
         watcher._tick_count = 6
         watcher._auto_recover_blocked()
@@ -284,16 +346,25 @@ class TestDashboardQuestions:
     def test_plain_dashboard_shows_questions(self, store, project_root):
         from warchief.dashboard import _build_plain_snapshot
 
-        store.create_task(TaskRecord(
-            id="wc-dq1", title="Schema task",
-            status="blocked", stage="development",
-            labels=["stage:development", "question"],
-        ))
-        store.create_message(MessageRecord(
-            id="", from_agent="wc-dq1", to_agent="user",
-            message_type="question", body="How to create schema?",
-            persistent=True,
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-dq1",
+                title="Schema task",
+                status="blocked",
+                stage="development",
+                labels=["stage:development", "question"],
+            )
+        )
+        store.create_message(
+            MessageRecord(
+                id="",
+                from_agent="wc-dq1",
+                to_agent="user",
+                message_type="question",
+                body="How to create schema?",
+                persistent=True,
+            )
+        )
 
         output = _build_plain_snapshot(store, project_root)
         assert "QUESTIONS" in output
@@ -303,10 +374,14 @@ class TestDashboardQuestions:
     def test_plain_dashboard_no_questions_section_when_empty(self, store, project_root):
         from warchief.dashboard import _build_plain_snapshot
 
-        store.create_task(TaskRecord(
-            id="wc-dq2", title="Normal task",
-            status="open", stage="development",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-dq2",
+                title="Normal task",
+                status="open",
+                stage="development",
+            )
+        )
 
         output = _build_plain_snapshot(store, project_root)
         assert "QUESTIONS" not in output
@@ -321,14 +396,21 @@ class TestSpawnerQuestionInstructions:
 
         registry = RoleRegistry(Path(__file__).parent.parent / "warchief" / "roles")
         task = TaskRecord(
-            id="wc-sp1", title="Test task",
-            status="open", stage="development",
+            id="wc-sp1",
+            title="Test task",
+            status="open",
+            stage="development",
         )
         config = Config(base_branch="main")
         project_root = Path("/tmp/fake-project")
 
         cmd, cwd, prompt = build_claude_command(
-            "developer", registry, task, None, project_root, config,
+            "developer",
+            registry,
+            task,
+            None,
+            project_root,
+            config,
         )
         assert "Asking Questions" in prompt
         assert '--question "Your question here"' in prompt
@@ -339,15 +421,24 @@ class TestQuestionsCommand:
     """Test the questions list command."""
 
     def test_lists_pending_questions(self, store):
-        store.create_task(TaskRecord(
-            id="wc-lq1", title="Question task",
-            status="blocked", labels=["question"],
-        ))
-        store.create_message(MessageRecord(
-            id="", from_agent="wc-lq1", to_agent="user",
-            message_type="question", body="What DB to use?",
-            persistent=True,
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-lq1",
+                title="Question task",
+                status="blocked",
+                labels=["question"],
+            )
+        )
+        store.create_message(
+            MessageRecord(
+                id="",
+                from_agent="wc-lq1",
+                to_agent="user",
+                message_type="question",
+                body="What DB to use?",
+                persistent=True,
+            )
+        )
 
         tasks = store.list_tasks(has_label="question")
         assert len(tasks) == 1

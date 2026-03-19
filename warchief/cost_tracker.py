@@ -1,4 +1,5 @@
 """Cost tracking — track token usage and costs per agent and task."""
+
 from __future__ import annotations
 
 import json
@@ -15,21 +16,29 @@ from warchief.task_store import TaskStore
 # cache_read = cached input read price, cache_write = cached input write price
 MODEL_PRICING: dict[str, dict[str, float]] = {
     "claude-opus-4-20250514": {
-        "input": 15.0, "output": 75.0,
-        "cache_read": 1.50, "cache_write": 18.75,
+        "input": 15.0,
+        "output": 75.0,
+        "cache_read": 1.50,
+        "cache_write": 18.75,
     },
     "claude-sonnet-4-20250514": {
-        "input": 3.0, "output": 15.0,
-        "cache_read": 0.30, "cache_write": 3.75,
+        "input": 3.0,
+        "output": 15.0,
+        "cache_read": 0.30,
+        "cache_write": 3.75,
     },
     "claude-haiku-4-5-20251001": {
-        "input": 0.80, "output": 4.0,
-        "cache_read": 0.08, "cache_write": 1.0,
+        "input": 0.80,
+        "output": 4.0,
+        "cache_read": 0.08,
+        "cache_write": 1.0,
     },
     # Fallback for unknown models (sonnet pricing)
     "default": {
-        "input": 3.0, "output": 15.0,
-        "cache_read": 0.30, "cache_write": 3.75,
+        "input": 3.0,
+        "output": 15.0,
+        "cache_read": 0.30,
+        "cache_write": 3.75,
     },
 }
 
@@ -130,15 +139,17 @@ def load_cost_log(project_root: Path) -> list[CostEntry]:
             continue
         try:
             data = json.loads(line)
-            entries.append(CostEntry(
-                agent_id=data["agent_id"],
-                task_id=data["task_id"],
-                role=data["role"],
-                model=data["model"],
-                usage=TokenUsage(**data["usage"]),
-                cost_usd=data["cost_usd"],
-                timestamp=data.get("timestamp", 0.0),
-            ))
+            entries.append(
+                CostEntry(
+                    agent_id=data["agent_id"],
+                    task_id=data["task_id"],
+                    role=data["role"],
+                    model=data["model"],
+                    usage=TokenUsage(**data["usage"]),
+                    cost_usd=data["cost_usd"],
+                    timestamp=data.get("timestamp", 0.0),
+                )
+            )
         except (json.JSONDecodeError, KeyError):
             continue
     return entries
@@ -197,15 +208,17 @@ def _load_usage_json_files(project_root: Path) -> list[CostEntry]:
             cost_usd = data.get("cost_usd", 0.0)
             if not cost_usd:
                 cost_usd = estimate_cost(usage, model)
-            entries.append(CostEntry(
-                agent_id=agent_id,
-                task_id="",
-                role=role,
-                model=model,
-                usage=usage,
-                cost_usd=cost_usd,
-                timestamp=data.get("timestamp", 0.0),
-            ))
+            entries.append(
+                CostEntry(
+                    agent_id=agent_id,
+                    task_id="",
+                    role=role,
+                    model=model,
+                    usage=usage,
+                    cost_usd=cost_usd,
+                    timestamp=data.get("timestamp", 0.0),
+                )
+            )
         except (json.JSONDecodeError, OSError, KeyError):
             continue
     return entries
@@ -230,8 +243,9 @@ def compute_cost_summary(project_root: Path) -> CostSummary:
     for entry in entries:
         # Re-estimate cost if it was recorded as 0 but has token data
         cost = entry.cost_usd
-        if not cost and (entry.usage.input_tokens or entry.usage.output_tokens
-                         or entry.usage.cache_read_tokens):
+        if not cost and (
+            entry.usage.input_tokens or entry.usage.output_tokens or entry.usage.cache_read_tokens
+        ):
             cost = estimate_cost(entry.usage, entry.model)
             entry.cost_usd = cost
 

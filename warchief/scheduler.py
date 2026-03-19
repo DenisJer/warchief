@@ -1,4 +1,5 @@
 """Scheduler — capacity-controlled dispatch of schedule_contexts."""
+
 from __future__ import annotations
 
 import fcntl
@@ -66,8 +67,11 @@ class Scheduler:
         running = self.store.get_running_agents()
         available_slots = self.config.max_total_agents - len(running)
         if available_slots <= 0:
-            log.debug("No agent slots available (%d/%d running)",
-                      len(running), self.config.max_total_agents)
+            log.debug(
+                "No agent slots available (%d/%d running)",
+                len(running),
+                self.config.max_total_agents,
+            )
             return 0
 
         spawned = 0
@@ -86,16 +90,24 @@ class Scheduler:
 
             role = ctx["role"]
             errors = run_preflight(
-                task, role, self.project_root,
-                self.store, self.config, self.registry,
+                task,
+                role,
+                self.project_root,
+                self.store,
+                self.config,
+                self.registry,
             )
             if errors:
                 log.debug("Preflight failed for schedule %s: %s", ctx["id"], errors)
                 continue
 
             agent = spawn_agent(
-                task, role, self.project_root,
-                self.store, self.config, self.registry,
+                task,
+                role,
+                self.project_root,
+                self.store,
+                self.config,
+                self.registry,
             )
             if agent:
                 self._mark_context(ctx["id"], "dispatched")
@@ -108,6 +120,7 @@ class Scheduler:
     def create_context(self, task_id: str, role: str) -> str:
         """Create a new schedule_context for later dispatch."""
         import uuid
+
         ctx_id = f"sched-{uuid.uuid4().hex[:8]}"
         now = time.time()
         self.store._conn.execute(

@@ -1,4 +1,5 @@
 """Tests for pipeline template loading."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -52,7 +53,9 @@ class TestPipelineTemplate:
         assert "security-review" in stages
 
     def test_next_stage(self, default_pipeline: PipelineTemplate):
-        assert default_pipeline.next_stage("development", []) == "reviewing"
+        assert default_pipeline.next_stage("planning", []) == "development"
+        assert default_pipeline.next_stage("development", []) == "testing"
+        assert default_pipeline.next_stage("testing", []) == "reviewing"
         assert default_pipeline.next_stage("reviewing", []) == "pr-creation"
         assert default_pipeline.next_stage("pr-creation", []) is None
 

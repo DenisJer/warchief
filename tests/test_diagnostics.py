@@ -1,4 +1,5 @@
 """Tests for diagnostics."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,10 +30,14 @@ class TestRecentFailures:
 
     def test_finds_crashes(self, store: TaskStore):
         store.create_task(TaskRecord(id="wc-f1", title="Crashed task"))
-        store.log_event(EventRecord(
-            event_type="crash", task_id="wc-f1", agent_id="dev-thrall",
-            details={"exit_code": 1},
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="crash",
+                task_id="wc-f1",
+                agent_id="dev-thrall",
+                details={"exit_code": 1},
+            )
+        )
 
         failures = get_recent_failures(store)
         assert len(failures) == 1
@@ -41,19 +46,25 @@ class TestRecentFailures:
 
     def test_finds_blocks(self, store: TaskStore):
         store.create_task(TaskRecord(id="wc-f2", title="Blocked"))
-        store.log_event(EventRecord(
-            event_type="block", task_id="wc-f2",
-            details={"failure_reason": "Too many rejections"},
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="block",
+                task_id="wc-f2",
+                details={"failure_reason": "Too many rejections"},
+            )
+        )
 
         failures = get_recent_failures(store)
         assert len(failures) == 1
 
     def test_limit(self, store: TaskStore):
         for i in range(10):
-            store.log_event(EventRecord(
-                event_type="crash", task_id=f"wc-{i}",
-            ))
+            store.log_event(
+                EventRecord(
+                    event_type="crash",
+                    task_id=f"wc-{i}",
+                )
+            )
 
         failures = get_recent_failures(store, limit=3)
         assert len(failures) == 3
@@ -64,15 +75,17 @@ class TestFormatReport:
         assert "No recent failures" in format_failure_report([])
 
     def test_formatted(self):
-        failures = [{
-            "event_type": "crash",
-            "task_id": "wc-f1",
-            "task_title": "Login page",
-            "agent_id": "dev-thrall",
-            "details": {"exit_code": 1},
-            "timestamp": 1234567890,
-            "actor": "watcher",
-        }]
+        failures = [
+            {
+                "event_type": "crash",
+                "task_id": "wc-f1",
+                "task_title": "Login page",
+                "agent_id": "dev-thrall",
+                "details": {"exit_code": 1},
+                "timestamp": 1234567890,
+                "actor": "watcher",
+            }
+        ]
         report = format_failure_report(failures)
         assert "CRASH" in report
         assert "wc-f1" in report

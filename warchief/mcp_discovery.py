@@ -7,6 +7,7 @@ Discovers MCP tools from three sources:
 
 Matches user phrases like "figma console" or "supabase" to the right patterns.
 """
+
 from __future__ import annotations
 
 import json

@@ -1,4 +1,5 @@
 """Watcher — the main poll loop that monitors agents and drives transitions."""
+
 from __future__ import annotations
 
 import json
@@ -10,9 +11,18 @@ import time
 from pathlib import Path
 
 from warchief.config import (
-    AGENT_TIMEOUT, Config, FRONTEND_EXTENSIONS, POLL_INTERVAL, STAGE_TO_ROLE,
-    ZOMBIE_THRESHOLD, MAX_SPAWNS_PER_CYCLE, MAX_REJECTIONS, MAX_CRASHES,
-    MAX_TOTAL_SPAWNS, MAX_AUTO_RETRIES, read_config,
+    AGENT_TIMEOUT,
+    Config,
+    FRONTEND_EXTENSIONS,
+    POLL_INTERVAL,
+    STAGE_TO_ROLE,
+    ZOMBIE_THRESHOLD,
+    MAX_SPAWNS_PER_CYCLE,
+    MAX_REJECTIONS,
+    MAX_CRASHES,
+    MAX_TOTAL_SPAWNS,
+    MAX_AUTO_RETRIES,
+    read_config,
 )
 from warchief.heartbeat import cleanup_heartbeat, is_zombie
 from warchief.models import AgentRecord, EventRecord, TaskRecord, TransitionResult, get_task_branch
@@ -21,7 +31,13 @@ from warchief.roles import RoleRegistry
 from warchief.spawner import spawn_agent
 from warchief.state_machine import dispatch_transition
 from warchief.task_store import TaskStore
-from warchief.cost_tracker import CostEntry, TokenUsage, append_cost_entry, estimate_cost, get_task_cost, get_session_cost
+from warchief.cost_tracker import (
+    CostEntry,
+    TokenUsage,
+    append_cost_entry,
+    estimate_cost,
+    get_session_cost,
+)
 from warchief.worktree import remove_worktree
 
 log = logging.getLogger("warchief.watcher")
@@ -34,6 +50,7 @@ def _default_branch(project_root: Path) -> str:
     key = str(project_root)
     if key not in _default_branch_cache:
         from warchief.config import detect_default_branch
+
         _default_branch_cache[key] = detect_default_branch(project_root)
     return _default_branch_cache[key]
 
@@ -113,10 +130,9 @@ class Watcher:
 
         # 1. Remove all worktrees where the agent process is dead
         from warchief.worktree import list_worktrees
+
         worktree_ids = list_worktrees(self.project_root)
-        all_agents = self.store._conn.execute(
-            "SELECT id, pid, status FROM agents"
-        ).fetchall()
+        all_agents = self.store._conn.execute("SELECT id, pid, status FROM agents").fetchall()
         agent_pids = {row[0]: row[1] for row in all_agents}
 
         removed = 0
@@ -168,7 +184,9 @@ class Watcher:
         try:
             subprocess.run(
                 ["git", "worktree", "prune"],
-                cwd=self.project_root, capture_output=True, timeout=10,
+                cwd=self.project_root,
+                capture_output=True,
+                timeout=10,
             )
         except (subprocess.TimeoutExpired, OSError):
             pass
@@ -177,14 +195,19 @@ class Watcher:
         try:
             result = subprocess.run(
                 ["git", "branch", "--show-current"],
-                cwd=self.project_root, capture_output=True, text=True, timeout=5,
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             current = result.stdout.strip()
             if current and current.startswith("feature/"):
                 base = _default_branch(self.project_root)
                 subprocess.run(
                     ["git", "checkout", base],
-                    cwd=self.project_root, capture_output=True, timeout=10,
+                    cwd=self.project_root,
+                    capture_output=True,
+                    timeout=10,
                 )
                 log.info("Switched main repo from %s to %s", current, base)
         except (subprocess.TimeoutExpired, OSError):
@@ -196,8 +219,43 @@ class Watcher:
             for sf in sessions_dir.glob("*.session"):
                 sf.unlink(missing_ok=True)
 
+        # 7. Clear spawn backoff (stale entries from previous session)
+        self._spawn_backoff.clear()
+
+        # 8. Clean up stale agent artifacts (.prompt files, old .usage.json)
+        agent_logs_dir = self.project_root / ".warchief" / "agent-logs"
+        if agent_logs_dir.exists():
+            cutoff = time.time() - 86400  # 24 hours
+            cleaned = 0
+            for artifact in agent_logs_dir.iterdir():
+                if artifact.name.endswith(".prompt"):
+                    artifact.unlink(missing_ok=True)
+                    cleaned += 1
+                elif artifact.name.endswith(".usage.json") and artifact.stat().st_mtime < cutoff:
+                    artifact.unlink(missing_ok=True)
+                    cleaned += 1
+            if cleaned:
+                log.info("Startup: cleaned %d stale agent artifacts", cleaned)
+
+        # 9. Prune old scratchpads for closed tasks
+        scratchpads_dir = self.project_root / ".warchief" / "scratchpads"
+        if scratchpads_dir.exists():
+            closed_tasks = {t.id for t in self.store.list_tasks(status="closed")}
+            pruned = 0
+            for sp in scratchpads_dir.glob("*.md"):
+                task_id = sp.stem
+                if task_id in closed_tasks:
+                    sp.unlink(missing_ok=True)
+                    pruned += 1
+            if pruned:
+                log.info("Startup: pruned %d scratchpads for closed tasks", pruned)
+
         if removed or orphans:
-            log.info("Startup cleanup: removed %d worktrees, reset %d orphaned tasks", removed, len(orphans))
+            log.info(
+                "Startup cleanup: removed %d worktrees, reset %d orphaned tasks",
+                removed,
+                len(orphans),
+            )
             self._emit(f"Startup cleanup: {removed} worktrees removed, {len(orphans)} tasks reset")
 
     def stop(self) -> None:
@@ -265,7 +323,10 @@ class Watcher:
         self._tick_count += 1
 
         # Reload config on each tick for hot-reload
-        self.config = read_config(self.project_root)
+        try:
+            self.config = read_config(self.project_root)
+        except Exception:
+            log.warning("Failed to reload config.toml, keeping previous config")
         if self.config.paused:
             if self._tick_count % 12 == 0:
                 self._emit("Pipeline paused — skipping tick")
@@ -278,12 +339,19 @@ class Watcher:
             tracked = len(self._agent_procs)
             log.info(
                 "Tick %d: %d alive agents, %d tracked procs",
-                self._tick_count, len(alive), tracked,
+                self._tick_count,
+                len(alive),
+                tracked,
             )
             for a in alive:
                 is_alive = _is_process_alive(a.pid) if a.pid else False
-                log.info("  Agent %s (PID %d) task=%s proc_alive=%s",
-                         a.id, a.pid or 0, a.current_task, is_alive)
+                log.info(
+                    "  Agent %s (PID %d) task=%s proc_alive=%s",
+                    a.id,
+                    a.pid or 0,
+                    a.current_task,
+                    is_alive,
+                )
 
         self.cleanup_finished()
         self.check_zombies()
@@ -318,7 +386,11 @@ class Watcher:
         blocked = self.store.list_tasks(status="blocked")
 
         # Get set of tasks with alive agents — don't touch these
-        alive_task_ids = {a.current_task for a in self.store.get_running_agents() if a.status == "alive" and a.current_task}
+        alive_task_ids = {
+            a.current_task
+            for a in self.store.get_running_agents()
+            if a.status == "alive" and a.current_task
+        }
 
         # Clear announced questions that have been answered
         if hasattr(self, "_announced_questions"):
@@ -362,9 +434,7 @@ class Watcher:
 
             # Count previous auto-unblock attempts for this task
             events = self.store.get_events(task_id=task.id, limit=200)
-            auto_unblock_count = sum(
-                1 for e in events if e.event_type == "auto_unblock"
-            )
+            auto_unblock_count = sum(1 for e in events if e.event_type == "auto_unblock")
 
             if auto_unblock_count >= MAX_AUTO_RETRIES:
                 # Already retried enough — spawn conductor to diagnose
@@ -372,18 +442,13 @@ class Watcher:
                     self._spawn_triage(task)
                 elif self._tick_count % 12 == 0:
                     self._emit(
-                        f"Task {task.id} ({task.title[:40]}) "
-                        f"BLOCKED — waiting for user decision"
+                        f"Task {task.id} ({task.title[:40]}) BLOCKED — waiting for user decision"
                     )
                 continue
 
             # Find the most recent block event to determine failure reason
-            block_event = next(
-                (e for e in events if e.event_type == "block"), None
-            )
-            failure_reason = (
-                block_event.details.get("failure_reason", "") if block_event else ""
-            )
+            block_event = next((e for e in events if e.event_type == "block"), None)
+            failure_reason = block_event.details.get("failure_reason", "") if block_event else ""
 
             recovery = self._plan_recovery(task, failure_reason)
             if recovery is None:
@@ -396,23 +461,27 @@ class Watcher:
 
             # Apply the recovery
             self.store.update_task(task.id, **recovery)
-            self.store.log_event(EventRecord(
-                event_type="auto_unblock",
-                task_id=task.id,
-                details={
-                    "failure_reason": failure_reason,
-                    "recovery": recovery,
-                    "attempt": auto_unblock_count + 1,
-                },
-                actor="watcher",
-            ))
+            self.store.log_event(
+                EventRecord(
+                    event_type="auto_unblock",
+                    task_id=task.id,
+                    details={
+                        "failure_reason": failure_reason,
+                        "recovery": recovery,
+                        "attempt": auto_unblock_count + 1,
+                    },
+                    actor="watcher",
+                )
+            )
             self._emit(
                 f"Auto-recovered task {task.id} ({task.title[:40]}): "
                 f"{failure_reason} → retry #{auto_unblock_count + 1}"
             )
 
     def _plan_recovery(
-        self, task: TaskRecord, failure_reason: str,
+        self,
+        task: TaskRecord,
+        failure_reason: str,
     ) -> dict | None:
         """Determine recovery updates for a blocked task. Returns None if unrecoverable."""
 
@@ -504,7 +573,10 @@ class Watcher:
     # ── Handoff / rejection message storage ────────────────────
 
     def _store_handoff_or_rejection(
-        self, task: TaskRecord, agent: AgentRecord, result: TransitionResult,
+        self,
+        task: TaskRecord,
+        agent: AgentRecord,
+        result: TransitionResult,
     ) -> None:
         """Extract agent's last comment and store as handoff or rejection message.
 
@@ -512,12 +584,10 @@ class Watcher:
         next agent. When it rejects, the comment becomes rejection feedback.
         """
         from warchief.models import MessageRecord
+
         # Find the agent's last comment event
         events = self.store.get_events(task_id=task.id, limit=20)
-        agent_comments = [
-            e for e in events
-            if e.event_type == "comment" and e.agent_id == agent.id
-        ]
+        agent_comments = [e for e in events if e.event_type == "comment" and e.agent_id == agent.id]
         if not agent_comments:
             return
 
@@ -550,7 +620,7 @@ class Watcher:
             if not comment.startswith("DECOMPOSE:"):
                 continue
 
-            json_str = comment[len("DECOMPOSE:"):].strip()
+            json_str = comment[len("DECOMPOSE:") :].strip()
             try:
                 sub_tasks = __import__("json").loads(json_str)
             except (ValueError, TypeError):
@@ -566,6 +636,7 @@ class Watcher:
     def _create_sub_tasks(self, parent: TaskRecord, sub_tasks: list[dict]) -> None:
         """Create sub-tasks from a decomposition signal and block the parent."""
         import uuid
+
         now = time.time()
         group_id = parent.group_id or parent.id
         created_ids = []
@@ -591,23 +662,30 @@ class Watcher:
             )
             self.store.create_task(record)
             created_ids.append(task_id)
-            log.info("Created sub-task %s: %s (group %s) → development", task_id, st["title"], group_id)
+            log.info(
+                "Created sub-task %s: %s (group %s) → development", task_id, st["title"], group_id
+            )
 
         if created_ids:
             # Close parent — sub-tasks carry the work now
             self.store.update_task(
-                parent.id, status="closed", stage=None,
-                labels=["decomposed"], group_id=group_id,
+                parent.id,
+                status="closed",
+                stage=None,
+                labels=["decomposed"],
+                group_id=group_id,
             )
-            self.store.log_event(EventRecord(
-                event_type="decompose",
-                task_id=parent.id,
-                details={
-                    "sub_tasks": created_ids,
-                    "count": len(created_ids),
-                },
-                actor="watcher",
-            ))
+            self.store.log_event(
+                EventRecord(
+                    event_type="decompose",
+                    task_id=parent.id,
+                    details={
+                        "sub_tasks": created_ids,
+                        "count": len(created_ids),
+                    },
+                    actor="watcher",
+                )
+            )
             self._emit(
                 f"Task {parent.id} decomposed into {len(created_ids)} sub-tasks: "
                 + ", ".join(created_ids)
@@ -634,23 +712,41 @@ class Watcher:
             new_labels.append("group-waiting")
 
         not_done = [
-            s for s in siblings
-            if s.id != task.id
-            and "group-dev-done" not in s.labels
-            and s.status != "closed"
+            s
+            for s in siblings
+            if s.id != task.id and "group-dev-done" not in s.labels and s.status != "closed"
         ]
 
         if not_done:
             # Not all siblings done — hold at development
             self.store.update_task(
-                task.id, labels=new_labels, status="open",
+                task.id,
+                labels=new_labels,
+                status="open",
                 assigned_agent=None,
             )
             waiting_ids = [s.id for s in not_done]
-            self._emit(
-                f"Task {task.id}: dev complete, waiting for siblings {waiting_ids}"
-            )
+            self._emit(f"Task {task.id}: dev complete, waiting for siblings {waiting_ids}")
             log.info("Group dev gate: %s waiting for %s", task.id, waiting_ids)
+            return True
+
+        # All siblings done — but re-verify to prevent race where concurrent
+        # ticks both pass this gate simultaneously
+        siblings = self.store.get_group_tasks(task.group_id)
+        not_done = [
+            s
+            for s in siblings
+            if s.id != task.id and "group-dev-done" not in s.labels and s.status != "closed"
+        ]
+        if not_done:
+            # Race detected — another sibling wasn't done yet
+            self.store.update_task(
+                task.id,
+                labels=new_labels,
+                status="open",
+                assigned_agent=None,
+            )
+            log.warning("Group dev gate race detected for %s, re-holding", task.id)
             return True
 
         # All siblings done — elect group lead (first in list = highest priority)
@@ -662,7 +758,9 @@ class Watcher:
         for s in siblings:
             if s.id == lead.id:
                 continue
-            sibling_descriptions.append(f"- {s.title}: {s.description}" if s.description else f"- {s.title}")
+            sibling_descriptions.append(
+                f"- {s.title}: {s.description}" if s.description else f"- {s.title}"
+            )
         if sibling_descriptions:
             combined_desc = (
                 f"{lead.description}\n\n"
@@ -675,6 +773,7 @@ class Watcher:
 
         # Advance the lead to the next pipeline stage
         from warchief.state_machine import get_next_stage
+
         next_stage = get_next_stage("development", lead.labels)
         if not next_stage:
             next_stage = "testing"  # fallback
@@ -686,8 +785,11 @@ class Watcher:
                 lead_labels.append(f"stage:{next_stage}")
             lead_labels = [l for l in lead_labels if not l.startswith("stage:development")]
             self.store.update_task(
-                lead.id, stage=next_stage, labels=lead_labels,
-                status="open", assigned_agent=None,
+                lead.id,
+                stage=next_stage,
+                labels=lead_labels,
+                status="open",
+                assigned_agent=None,
             )
         else:
             # Lead is a different task — advance it, close this task
@@ -699,12 +801,17 @@ class Watcher:
                     lead_labels.append(f"stage:{next_stage}")
                 lead_labels = [l for l in lead_labels if not l.startswith("stage:development")]
                 self.store.update_task(
-                    lead.id, stage=next_stage, labels=lead_labels,
-                    status="open", assigned_agent=None,
+                    lead.id,
+                    stage=next_stage,
+                    labels=lead_labels,
+                    status="open",
+                    assigned_agent=None,
                 )
             # Close this task
             self.store.update_task(
-                task.id, status="closed", assigned_agent=None,
+                task.id,
+                status="closed",
+                assigned_agent=None,
                 labels=new_labels,
             )
 
@@ -715,16 +822,18 @@ class Watcher:
             if s.status == "closed":
                 continue
             self.store.update_task(s.id, status="closed")
-            self.store.log_event(EventRecord(
-                event_type="advance",
-                task_id=s.id,
-                details={
-                    "from_stage": s.stage,
-                    "to_stage": "closed",
-                    "reason": f"Group lead {lead.id} advancing to {next_stage}",
-                },
-                actor="watcher",
-            ))
+            self.store.log_event(
+                EventRecord(
+                    event_type="advance",
+                    task_id=s.id,
+                    details={
+                        "from_stage": s.stage,
+                        "to_stage": "closed",
+                        "reason": f"Group lead {lead.id} advancing to {next_stage}",
+                    },
+                    actor="watcher",
+                )
+            )
             self._emit(f"Task {s.id}: closed (group lead is {lead.id})")
 
         self._emit(
@@ -746,10 +855,7 @@ class Watcher:
 
         # If all siblings are already closed (dev gate consolidated to a lead),
         # this task IS the lead — just let it proceed to pr-creation
-        active_siblings = [
-            s for s in siblings
-            if s.id != task.id and s.status != "closed"
-        ]
+        active_siblings = [s for s in siblings if s.id != task.id and s.status != "closed"]
         if not active_siblings:
             # Remove group-waiting label if present and let it proceed
             fresh = self.store.get_task(task.id)
@@ -764,10 +870,9 @@ class Watcher:
             return
 
         not_ready = [
-            s for s in siblings
-            if s.id != task.id
-            and s.stage != "pr-creation"
-            and s.status != "closed"
+            s
+            for s in siblings
+            if s.id != task.id and s.stage != "pr-creation" and s.status != "closed"
         ]
 
         if not_ready:
@@ -779,13 +884,15 @@ class Watcher:
             if "group-waiting" not in new_labels:
                 new_labels.append("group-waiting")
             self.store.update_task(
-                task.id, stage="pr-creation", labels=new_labels,
-                status="open", assigned_agent=None,
+                task.id,
+                stage="pr-creation",
+                labels=new_labels,
+                status="open",
+                assigned_agent=None,
             )
             waiting_ids = [s.id for s in not_ready]
             self._emit(
-                f"Task {task.id}: waiting for group siblings {waiting_ids} "
-                f"before creating PR"
+                f"Task {task.id}: waiting for group siblings {waiting_ids} before creating PR"
             )
             return
 
@@ -797,16 +904,18 @@ class Watcher:
             if s.status == "closed":
                 continue
             self.store.update_task(s.id, status="closed")
-            self.store.log_event(EventRecord(
-                event_type="advance",
-                task_id=s.id,
-                details={
-                    "from_stage": s.stage,
-                    "to_stage": "closed",
-                    "reason": f"Group PR will be created by {task.id}",
-                },
-                actor="watcher",
-            ))
+            self.store.log_event(
+                EventRecord(
+                    event_type="advance",
+                    task_id=s.id,
+                    details={
+                        "from_stage": s.stage,
+                        "to_stage": "closed",
+                        "reason": f"Group PR will be created by {task.id}",
+                    },
+                    actor="watcher",
+                )
+            )
             self._emit(f"Task {s.id}: closed (group PR via {task.id})")
 
         # Remove group-waiting label from the chosen task
@@ -838,8 +947,7 @@ class Watcher:
 
         changed_files = self._get_changed_files(task)
         has_frontend = any(
-            ("." + f.rsplit(".", 1)[-1] if "." in f else "").lower()
-            in FRONTEND_EXTENSIONS
+            ("." + f.rsplit(".", 1)[-1] if "." in f else "").lower() in FRONTEND_EXTENSIONS
             for f in changed_files
         )
 
@@ -856,7 +964,9 @@ class Watcher:
         if "needs-testing" not in new_labels:
             new_labels.append("needs-testing")
         self.store.update_task(
-            task.id, stage="testing", labels=new_labels,
+            task.id,
+            stage="testing",
+            labels=new_labels,
         )
         self._announce_testing(task, changed_files)
 
@@ -867,7 +977,10 @@ class Watcher:
         try:
             result = subprocess.run(
                 ["git", "diff", "--name-only", f"{base}...{branch}"],
-                cwd=self.project_root, capture_output=True, text=True, timeout=10,
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if result.returncode == 0:
                 return [f.strip() for f in result.stdout.strip().splitlines() if f.strip()]
@@ -896,10 +1009,10 @@ class Watcher:
                 print(f"    ... and {len(changed_files) - 10} more", flush=True)
         print(f"\n  1. Test the changes manually", flush=True)
         print(f"  2. Approve:  approve {task.id}", flush=True)
-        print(f"  3. Reject:   reject {task.id} \"feedback\"", flush=True)
+        print(f'  3. Reject:   reject {task.id} "feedback"', flush=True)
         print(f"{'=' * 60}\n", flush=True)
 
-        log.info("Testing announced for task %s (%d frontend files)", task.id, len(frontend_files))
+        log.info("Testing announced for task %s (%d changed files)", task.id, len(changed_files))
 
     # ── Question announcements ─────────────────────────────────
 
@@ -971,8 +1084,12 @@ class Watcher:
 
         # Spawn the conductor as an investigator (read-only, no worktree)
         agent = spawn_agent(
-            task, "investigator", self.project_root,
-            self.store, self.config, self.registry,
+            task,
+            "investigator",
+            self.project_root,
+            self.store,
+            self.config,
+            self.registry,
         )
         if agent:
             self._emit(f"Conductor triaging blocked task {task.id}: {task.title[:40]}")
@@ -1025,7 +1142,7 @@ class Watcher:
             if len(question_text) > 200:
                 preview += "..."
             print(f"\n  {preview}", flush=True)
-        print(f"\n  Answer with: warchief answer {task.id} \"your answer\"", flush=True)
+        print(f'\n  Answer with: warchief answer {task.id} "your answer"', flush=True)
         print(f"{'=' * 60}\n", flush=True)
 
         log.info("Question announced for task %s", task.id)
@@ -1042,6 +1159,7 @@ class Watcher:
 
         # Remove all worktrees for agents that worked on this task
         from warchief.worktree import list_worktrees
+
         worktree_ids = list_worktrees(self.project_root)
         agents_rows = self.store._conn.execute(
             "SELECT id, worktree_path FROM agents WHERE current_task = ?",
@@ -1068,28 +1186,38 @@ class Watcher:
         skip_branch_switch = False
         if task.group_id:
             siblings = self.store.get_group_tasks(task.group_id)
-            active_siblings = [
-                s for s in siblings
-                if s.id != task.id and s.status != "closed"
-            ]
+            active_siblings = [s for s in siblings if s.id != task.id and s.status != "closed"]
             if active_siblings:
                 skip_branch_switch = True
-                log.info("Skipping branch switch for %s — %d group siblings still active",
-                         task.id, len(active_siblings))
+                log.info(
+                    "Skipping branch switch for %s — %d group siblings still active",
+                    task.id,
+                    len(active_siblings),
+                )
 
         if not skip_branch_switch:
             try:
                 import subprocess
+
                 result = subprocess.run(
                     ["git", "branch", "--show-current"],
-                    cwd=self.project_root, capture_output=True, text=True, timeout=5,
+                    cwd=self.project_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 current_branch = result.stdout.strip()
                 if current_branch == task_branch:
-                    base = task.base_branch or self.config.base_branch or _default_branch(self.project_root)
+                    base = (
+                        task.base_branch
+                        or self.config.base_branch
+                        or _default_branch(self.project_root)
+                    )
                     subprocess.run(
                         ["git", "checkout", base],
-                        cwd=self.project_root, capture_output=True, timeout=10,
+                        cwd=self.project_root,
+                        capture_output=True,
+                        timeout=10,
                     )
                     log.info("Switched main repo back to %s (was on %s)", base, task_branch)
             except (subprocess.TimeoutExpired, OSError) as e:
@@ -1141,10 +1269,15 @@ class Watcher:
             timestamp=data.get("timestamp", time.time()),
         )
         append_cost_entry(self.project_root, entry)
-        log.info("Recorded cost for %s: $%.4f (%d in / %d out / %d cache_read / %d cache_write)",
-                 agent.id, entry.cost_usd,
-                 entry.usage.input_tokens, entry.usage.output_tokens,
-                 entry.usage.cache_read_tokens, entry.usage.cache_write_tokens)
+        log.info(
+            "Recorded cost for %s: $%.4f (%d in / %d out / %d cache_read / %d cache_write)",
+            agent.id,
+            entry.cost_usd,
+            entry.usage.input_tokens,
+            entry.usage.output_tokens,
+            entry.usage.cache_read_tokens,
+            entry.usage.cache_write_tokens,
+        )
 
         # Save session ID per task for potential resume on rejection
         session_id = data.get("session_id", "")
@@ -1156,15 +1289,26 @@ class Watcher:
                 except OSError:
                     pass
         if session_id and agent.current_task:
-            session_path = self.project_root / ".warchief" / "sessions" / f"{agent.current_task}-{agent.role}.session"
+            session_path = (
+                self.project_root
+                / ".warchief"
+                / "sessions"
+                / f"{agent.current_task}-{agent.role}.session"
+            )
             session_path.parent.mkdir(parents=True, exist_ok=True)
-            session_path.write_text(json.dumps({
-                "session_id": session_id,
-                "agent_id": agent.id,
-                "role": agent.role,
-                "worktree": agent.worktree_path or "",
-            }))
-            log.info("Saved session %s for task %s (%s)", session_id[:12], agent.current_task, agent.role)
+            session_path.write_text(
+                json.dumps(
+                    {
+                        "session_id": session_id,
+                        "agent_id": agent.id,
+                        "role": agent.role,
+                        "worktree": agent.worktree_path or "",
+                    }
+                )
+            )
+            log.info(
+                "Saved session %s for task %s (%s)", session_id[:12], agent.current_task, agent.role
+            )
 
     # ── Cleanup ─────────────────────────────────────────────────
 
@@ -1186,8 +1330,7 @@ class Watcher:
                 if exit_code is None:
                     exit_code = _get_exit_code(agent.pid)
 
-                log.info("Agent %s (PID %d) has exited (code=%s)",
-                         agent.id, agent.pid, exit_code)
+                log.info("Agent %s (PID %d) has exited (code=%s)", agent.id, agent.pid, exit_code)
                 status_word = "finished" if exit_code == 0 else f"crashed (exit {exit_code})"
                 self._emit(f"Agent {agent.id} {status_word}")
 
@@ -1217,7 +1360,10 @@ class Watcher:
                         self._handle_agent_exit(task, agent, exit_code)
 
     def _handle_agent_exit(
-        self, task: TaskRecord, agent: AgentRecord, exit_code: int | None,
+        self,
+        task: TaskRecord,
+        agent: AgentRecord,
+        exit_code: int | None,
     ) -> None:
         """Run the state machine for an agent that has exited."""
         # Re-read task from DB to get fresh status — the agent may have
@@ -1228,7 +1374,11 @@ class Watcher:
 
         log.info(
             "Processing exit: task=%s status=%s stage=%s exit_code=%s role=%s",
-            task.id, task.status, task.stage, exit_code, agent.role,
+            task.id,
+            task.status,
+            task.stage,
+            exit_code,
+            agent.role,
         )
 
         result = dispatch_transition(
@@ -1249,41 +1399,49 @@ class Watcher:
 
         log.info(
             "Transition result: task=%s next_stage=%s status=%s has_changes=%s failure=%s",
-            task.id, result.next_stage, result.status, result.has_changes, result.failure_reason,
+            task.id,
+            result.next_stage,
+            result.status,
+            result.has_changes,
+            result.failure_reason,
         )
 
         # Guard: feature/bug tasks exiting development with only docs/markdown
         # changes should be sent back — the developer didn't write real code
-        if (
-            task.stage == "development"
-            and result.next_stage
-            and task.type in ("feature", "bug")
-        ):
+        if task.stage == "development" and result.next_stage and task.type in ("feature", "bug"):
             changed = self._get_changed_files(task)
             from warchief.state_machine import DOC_EXTENSIONS
+
             files_with_ext = [f for f in changed if "." in f]
             all_docs = bool(files_with_ext) and all(
-                ("." + f.rsplit(".", 1)[-1]).lower() in DOC_EXTENSIONS
-                for f in files_with_ext
+                ("." + f.rsplit(".", 1)[-1]).lower() in DOC_EXTENSIONS for f in files_with_ext
             )
             if all_docs:
                 log.warning(
                     "Task %s: developer produced only doc files %s — resetting to development",
-                    task.id, changed,
+                    task.id,
+                    changed,
                 )
-                self._emit(f"Task {task.id}: docs-only changes rejected — developer must write code")
+                self._emit(
+                    f"Task {task.id}: docs-only changes rejected — developer must write code"
+                )
                 # Store feedback message so the re-spawned developer knows what went wrong
                 from warchief.models import MessageRecord
-                self.store.create_message(MessageRecord(
-                    id="", from_agent="watcher", to_agent=task.id,
-                    message_type="feedback",
-                    body=(
-                        "Your changes contained only documentation/markdown files. "
-                        "This is a code task — you must implement the actual code changes "
-                        "described in the task, not create planning documents."
-                    ),
-                    persistent=True,
-                ))
+
+                self.store.create_message(
+                    MessageRecord(
+                        id="",
+                        from_agent="watcher",
+                        to_agent=task.id,
+                        message_type="feedback",
+                        body=(
+                            "Your changes contained only documentation/markdown files. "
+                            "This is a code task — you must implement the actual code changes "
+                            "described in the task, not create planning documents."
+                        ),
+                        persistent=True,
+                    )
+                )
                 result = TransitionResult(status="open")
 
         # Build a single update dict to avoid optimistic locking failures
@@ -1334,8 +1492,11 @@ class Watcher:
         if result.next_stage in ("security-review", "testing"):
             changed_files = self._get_changed_files(task)
             from warchief.state_machine import should_skip_security_review, should_skip_testing
+
             skip = False
-            if result.next_stage == "security-review" and should_skip_security_review(changed_files):
+            if result.next_stage == "security-review" and should_skip_security_review(
+                changed_files
+            ):
                 skip = True
                 self._emit(f"Task {task.id}: skipping security-review (docs/config only)")
             elif result.next_stage == "testing" and should_skip_testing(changed_files):
@@ -1344,6 +1505,7 @@ class Watcher:
 
             if skip:
                 from warchief.state_machine import get_next_stage
+
                 skipped_stage = result.next_stage
                 next_next = get_next_stage(skipped_stage, task.labels)
                 if next_next:
@@ -1369,7 +1531,14 @@ class Watcher:
                 return
 
         # Apply ALL task updates in a single call (avoids optimistic lock failures)
-        self.store.update_task(task.id, **task_updates)
+        if not self.store.update_task(task.id, **task_updates):
+            # Optimistic lock failure — re-read and retry once
+            fresh = self.store.get_task(task.id)
+            if fresh:
+                log.warning(
+                    "Optimistic lock retry for task %s (version %d)", task.id, fresh.version
+                )
+                self.store.update_task(fresh.id, **task_updates)
 
         # Log the transition event
         if result.has_changes:
@@ -1379,22 +1548,29 @@ class Watcher:
             elif result.next_stage:
                 event_type = "advance"
 
-            self.store.log_event(EventRecord(
-                event_type=event_type,
-                task_id=task.id,
-                agent_id=agent.id,
-                details={
-                    "from_stage": task.stage,
-                    "to_stage": result.next_stage,
-                    "status": result.status,
-                    "failure_reason": result.failure_reason,
-                    "exit_code": exit_code,
-                },
-                actor="watcher",
-            ))
+            self.store.log_event(
+                EventRecord(
+                    event_type=event_type,
+                    task_id=task.id,
+                    agent_id=agent.id,
+                    details={
+                        "from_stage": task.stage,
+                        "to_stage": result.next_stage,
+                        "status": result.status,
+                        "failure_reason": result.failure_reason,
+                        "exit_code": exit_code,
+                    },
+                    actor="watcher",
+                )
+            )
 
-            log.info("Transition: task %s %s -> %s (status=%s)",
-                     task.id, task.stage, result.next_stage, result.status)
+            log.info(
+                "Transition: task %s %s -> %s (status=%s)",
+                task.id,
+                task.stage,
+                result.next_stage,
+                result.status,
+            )
             if result.next_stage:
                 self._emit(f"Task {task.id} ({task.title}): {task.stage} -> {result.next_stage}")
             elif result.failure_reason:
@@ -1424,14 +1600,17 @@ class Watcher:
         if result.next_stage:
             self._spawn_backoff.pop(task.id, None)
         elif result.status == "open" and not result.next_stage:
-            delay = min(10 * (2 ** task.crash_count), 300)
+            delay = min(10 * (2**task.crash_count), 300)
             self._spawn_backoff[task.id] = time.time() + delay
 
         # Cleanup heartbeat
         cleanup_heartbeat(self.project_root, agent.id)
 
     def _apply_transition(
-        self, task: TaskRecord, agent: AgentRecord, result: TransitionResult,
+        self,
+        task: TaskRecord,
+        agent: AgentRecord,
+        result: TransitionResult,
     ) -> None:
         """Apply a TransitionResult to the database.
 
@@ -1468,21 +1647,28 @@ class Watcher:
         elif result.next_stage:
             event_type = "advance"
 
-        self.store.log_event(EventRecord(
-            event_type=event_type,
-            task_id=task.id,
-            agent_id=agent.id,
-            details={
-                "from_stage": task.stage,
-                "to_stage": result.next_stage,
-                "status": result.status,
-                "failure_reason": result.failure_reason,
-            },
-            actor="watcher",
-        ))
+        self.store.log_event(
+            EventRecord(
+                event_type=event_type,
+                task_id=task.id,
+                agent_id=agent.id,
+                details={
+                    "from_stage": task.stage,
+                    "to_stage": result.next_stage,
+                    "status": result.status,
+                    "failure_reason": result.failure_reason,
+                },
+                actor="watcher",
+            )
+        )
 
-        log.info("Transition: task %s %s -> %s (status=%s)",
-                 task.id, task.stage, result.next_stage, result.status)
+        log.info(
+            "Transition: task %s %s -> %s (status=%s)",
+            task.id,
+            task.stage,
+            result.next_stage,
+            result.status,
+        )
         if result.next_stage:
             self._emit(f"Task {task.id} ({task.title}): {task.stage} -> {result.next_stage}")
         elif result.failure_reason:
@@ -1505,13 +1691,15 @@ class Watcher:
                 log.warning("Agent %s exceeded timeout (%ds), killing", agent.id, timeout)
                 self._emit(f"Agent {agent.id} TIMEOUT after {int(now - agent.spawned_at)}s")
                 self.store.update_agent(agent.id, status="dead")
-                self.store.log_event(EventRecord(
-                    event_type="timeout",
-                    task_id=agent.current_task,
-                    agent_id=agent.id,
-                    details={"elapsed": int(now - agent.spawned_at), "timeout": timeout},
-                    actor="watcher",
-                ))
+                self.store.log_event(
+                    EventRecord(
+                        event_type="timeout",
+                        task_id=agent.current_task,
+                        agent_id=agent.id,
+                        details={"elapsed": int(now - agent.spawned_at), "timeout": timeout},
+                        actor="watcher",
+                    )
+                )
                 if agent.pid:
                     try:
                         os.kill(agent.pid, signal.SIGTERM)
@@ -1522,7 +1710,9 @@ class Watcher:
                     task = self.store.get_task(agent.current_task)
                     if task and task.status == "in_progress":
                         self.store.update_task(
-                            task.id, status="open", assigned_agent=None,
+                            task.id,
+                            status="open",
+                            assigned_agent=None,
                             crash_count=task.crash_count + 1,
                         )
                 continue
@@ -1530,12 +1720,14 @@ class Watcher:
             if is_zombie(self.project_root, agent.id, ZOMBIE_THRESHOLD):
                 log.warning("Agent %s detected as zombie", agent.id)
                 self.store.update_agent(agent.id, status="zombie")
-                self.store.log_event(EventRecord(
-                    event_type="zombie",
-                    task_id=agent.current_task,
-                    agent_id=agent.id,
-                    actor="watcher",
-                ))
+                self.store.log_event(
+                    EventRecord(
+                        event_type="zombie",
+                        task_id=agent.current_task,
+                        agent_id=agent.id,
+                        actor="watcher",
+                    )
+                )
                 # Try to kill the process
                 if agent.pid:
                     try:
@@ -1553,25 +1745,29 @@ class Watcher:
         """
         orphans = self.store.get_orphaned_tasks()
         for task in orphans:
-            log.warning("Orphaned task %s (was assigned to %s)",
-                        task.id, task.assigned_agent)
+            log.warning("Orphaned task %s (was assigned to %s)", task.id, task.assigned_agent)
             self.store.update_task(
-                task.id, status="open", assigned_agent=None,
+                task.id,
+                status="open",
+                assigned_agent=None,
             )
-            self.store.log_event(EventRecord(
-                event_type="orphan_reset",
-                task_id=task.id,
-                agent_id=task.assigned_agent,
-                actor="watcher",
-            ))
+            self.store.log_event(
+                EventRecord(
+                    event_type="orphan_reset",
+                    task_id=task.id,
+                    agent_id=task.assigned_agent,
+                    actor="watcher",
+                )
+            )
             self._emit(f"Reset orphaned task {task.id}")
 
         # Handle stale agent assignments on open tasks — run transitions
         stale = self.store.get_stale_assigned_tasks()
         for task in stale:
             agent = self.store.get_agent(task.assigned_agent) if task.assigned_agent else None
-            log.warning("Stale agent %s on open task %s — running transition",
-                        task.assigned_agent, task.id)
+            log.warning(
+                "Stale agent %s on open task %s — running transition", task.assigned_agent, task.id
+            )
 
             if agent:
                 # Run the state machine so the task can advance
@@ -1643,10 +1839,9 @@ class Watcher:
                 continue
             siblings = self.store.get_group_tasks(task.group_id)
             not_ready = [
-                s for s in siblings
-                if s.id != task.id
-                and s.stage != "pr-creation"
-                and s.status != "closed"
+                s
+                for s in siblings
+                if s.id != task.id and s.stage != "pr-creation" and s.status != "closed"
             ]
             if not not_ready:
                 # All siblings ready — run the gate to pick one PR creator
@@ -1669,6 +1864,7 @@ class Watcher:
                 continue
             # Release into first stage based on task type
             from warchief.state_machine import get_first_stage
+
             first_stage = get_first_stage(task.type)
             new_labels = list(task.labels) + [f"stage:{first_stage}"]
             self.store.update_task(task.id, stage=first_stage, labels=new_labels)
@@ -1692,29 +1888,34 @@ class Watcher:
             if session_cost >= budget_cfg.session_limit:
                 log.warning(
                     "SESSION BUDGET EXCEEDED: $%.2f / $%.2f — pausing pipeline",
-                    session_cost, budget_cfg.session_limit,
+                    session_cost,
+                    budget_cfg.session_limit,
                 )
                 self._emit(
                     f"Budget exceeded: ${session_cost:.2f} / ${budget_cfg.session_limit:.2f} — PAUSING"
                 )
                 self.config.paused = True
                 from warchief.config import write_config
+
                 write_config(self.project_root, self.config)
-                self.store.log_event(EventRecord(
-                    event_type="block",
-                    details={
-                        "failure_reason": f"Session budget exceeded: ${session_cost:.2f} / ${budget_cfg.session_limit:.2f}",
-                        "budget_type": "session",
-                    },
-                    actor="watcher",
-                ))
+                self.store.log_event(
+                    EventRecord(
+                        event_type="block",
+                        details={
+                            "failure_reason": f"Session budget exceeded: ${session_cost:.2f} / ${budget_cfg.session_limit:.2f}",
+                            "budget_type": "session",
+                        },
+                        actor="watcher",
+                    )
+                )
                 return
 
             if session_cost >= warn_threshold and not self._budget_warned:
                 self._budget_warned = True
                 log.warning(
                     "Session budget warning: $%.2f / $%.2f (%.0f%%)",
-                    session_cost, budget_cfg.session_limit,
+                    session_cost,
+                    budget_cfg.session_limit,
                     session_cost / budget_cfg.session_limit * 100,
                 )
 
@@ -1723,33 +1924,44 @@ class Watcher:
         if per_task_limit <= 0:
             return
 
+        # Compute cost summary once for all task budget checks
+        from warchief.cost_tracker import compute_cost_summary
+
+        cost_summary = compute_cost_summary(self.project_root)
+
         tasks = self.store.list_tasks(status="in_progress")
         tasks += self.store.list_tasks(status="open")
         for task in tasks:
             # Use task-specific budget if set, otherwise config default
             limit = task.budget if task.budget > 0 else per_task_limit
-            task_cost = get_task_cost(self.project_root, task.id)
+            task_cost = cost_summary.by_task.get(task.id, 0.0)
             if task_cost >= limit and "budget-exceeded" not in task.labels:
                 log.warning(
                     "Task %s budget exceeded: $%.2f / $%.2f — blocking",
-                    task.id, task_cost, limit,
+                    task.id,
+                    task_cost,
+                    limit,
                 )
                 self._emit(
                     f"Task {task.id} budget exceeded: ${task_cost:.2f} / ${limit:.2f} — BLOCKED"
                 )
                 new_labels = list(task.labels) + ["budget-exceeded"]
                 self.store.update_task(
-                    task.id, status="blocked", labels=new_labels,
+                    task.id,
+                    status="blocked",
+                    labels=new_labels,
                 )
-                self.store.log_event(EventRecord(
-                    event_type="block",
-                    task_id=task.id,
-                    details={
-                        "failure_reason": f"Task budget exceeded: ${task_cost:.2f} / ${limit:.2f}",
-                        "budget_type": "per_task",
-                    },
-                    actor="watcher",
-                ))
+                self.store.log_event(
+                    EventRecord(
+                        event_type="block",
+                        task_id=task.id,
+                        details={
+                            "failure_reason": f"Task budget exceeded: ${task_cost:.2f} / ${limit:.2f}",
+                            "budget_type": "per_task",
+                        },
+                        actor="watcher",
+                    )
+                )
 
     # ── Spawning ────────────────────────────────────────────────
 
@@ -1759,7 +1971,11 @@ class Watcher:
         failed_this_cycle = 0
         max_failures_per_cycle = 3
         # Tasks with alive agents — don't spawn duplicates
-        alive_task_ids = {a.current_task for a in self.store.get_running_agents() if a.status == "alive" and a.current_task}
+        alive_task_ids = {
+            a.current_task
+            for a in self.store.get_running_agents()
+            if a.status == "alive" and a.current_task
+        }
 
         for stage, role in STAGE_TO_ROLE.items():
             if spawned_this_cycle >= MAX_SPAWNS_PER_CYCLE:
@@ -1800,16 +2016,24 @@ class Watcher:
                         continue
 
                 errors = run_preflight(
-                    task, role, self.project_root,
-                    self.store, self.config, self.registry,
+                    task,
+                    role,
+                    self.project_root,
+                    self.store,
+                    self.config,
+                    self.registry,
                 )
                 if errors:
                     log.debug("Preflight failed for %s: %s", task.id, errors)
                     continue
 
                 agent = spawn_agent(
-                    task, role, self.project_root,
-                    self.store, self.config, self.registry,
+                    task,
+                    role,
+                    self.project_root,
+                    self.store,
+                    self.config,
+                    self.registry,
                 )
                 if agent:
                     spawned_this_cycle += 1
@@ -1851,7 +2075,9 @@ class Watcher:
         try:
             result = subprocess.run(
                 ["git", "log", "--oneline", f"{base}..{branch}"],
-                cwd=self.project_root, capture_output=True, text=True,
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
             )
             return bool(result.stdout.strip())
         except (subprocess.CalledProcessError, FileNotFoundError):
@@ -1859,6 +2085,7 @@ class Watcher:
 
     def _install_signal_handlers(self) -> None:
         """Install SIGTERM/SIGINT handlers for graceful shutdown."""
+
         def handle_stop(signum, frame):
             log.info("Received signal %d, stopping watcher", signum)
             self.stop()
@@ -1879,10 +2106,32 @@ def _detect_labels(changed_files: list[str]) -> list[str]:
     labels: list[str] = []
 
     security_patterns = (
-        "auth", "login", "password", "passwd", "credential", "token",
-        "session", "cookie", "jwt", "oauth", "crypto", "encrypt", "decrypt",
-        "secret", "apikey", "api_key", "permission", "rbac", "acl",
-        "sanitiz", "xss", "csrf", "cors", "ssl", "tls", "cert",
+        "auth",
+        "login",
+        "password",
+        "passwd",
+        "credential",
+        "token",
+        "session",
+        "cookie",
+        "jwt",
+        "oauth",
+        "crypto",
+        "encrypt",
+        "decrypt",
+        "secret",
+        "apikey",
+        "api_key",
+        "permission",
+        "rbac",
+        "acl",
+        "sanitiz",
+        "xss",
+        "csrf",
+        "cors",
+        "ssl",
+        "tls",
+        "cert",
     )
 
     has_frontend = False
@@ -1896,9 +2145,12 @@ def _detect_labels(changed_files: list[str]) -> list[str]:
         if ext.lower() in FRONTEND_EXTENSIONS:
             has_frontend = True
 
-        # Security detection — check file path for security-related patterns
+        # Security detection — check file path components for security-related patterns
+        import re as _re
+
         for pat in security_patterns:
-            if pat in f_lower:
+            # Match as path component, not substring (avoids "token" matching "tokenizer")
+            if _re.search(r"(?:^|[/\\_.\-])" + _re.escape(pat) + r"(?:[/\\_.\-]|$)", f_lower):
                 has_security = True
                 break
 
@@ -1925,7 +2177,9 @@ def _is_process_alive(pid: int) -> bool:
     try:
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "state="],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         state = result.stdout.strip()
         if state.startswith("Z"):
@@ -1950,6 +2204,7 @@ def _get_exit_code(pid: int) -> int | None:
 def _acquire_lock(lock_path: Path) -> int:
     """Acquire a watcher lock file. Raises RuntimeError if already locked."""
     import fcntl
+
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
     try:
@@ -1965,6 +2220,7 @@ def _acquire_lock(lock_path: Path) -> int:
 def _release_lock(fd: int, lock_path: Path) -> None:
     """Release the watcher lock."""
     import fcntl
+
     try:
         fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)

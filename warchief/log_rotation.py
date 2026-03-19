@@ -1,4 +1,5 @@
 """Log rotation — rotate warchief.log and event logs."""
+
 from __future__ import annotations
 
 import logging

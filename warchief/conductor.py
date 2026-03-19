@@ -1,4 +1,5 @@
 """Conductor — decomposes high-level requirements into pipeline tasks."""
+
 from __future__ import annotations
 
 import json
@@ -77,14 +78,34 @@ def _get_project_tree(project_root: Path, max_depth: int = 2) -> str:
     """Get a brief project tree for context."""
     try:
         result = subprocess.run(
-            ["find", ".", "-maxdepth", str(max_depth),
-             "-not", "-path", "./.git/*",
-             "-not", "-path", "./node_modules/*",
-             "-not", "-path", "./.warchief/*",
-             "-not", "-path", "./.warchief-worktrees/*",
-             "-not", "-path", "./.venv/*",
-             "-not", "-name", "__pycache__"],
-            cwd=project_root, capture_output=True, text=True, timeout=10,
+            [
+                "find",
+                ".",
+                "-maxdepth",
+                str(max_depth),
+                "-not",
+                "-path",
+                "./.git/*",
+                "-not",
+                "-path",
+                "./node_modules/*",
+                "-not",
+                "-path",
+                "./.warchief/*",
+                "-not",
+                "-path",
+                "./.warchief-worktrees/*",
+                "-not",
+                "-path",
+                "./.venv/*",
+                "-not",
+                "-name",
+                "__pycache__",
+            ],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         lines = result.stdout.strip().split("\n")
         # Limit output size
@@ -116,6 +137,7 @@ def run_conductor(
     Returns:
         List of created TaskRecord objects
     """
+
     def emit(msg: str) -> None:
         if on_status:
             on_status(msg)
@@ -134,8 +156,12 @@ def run_conductor(
     model = config.role_models.get("conductor", "claude-sonnet-4-20250514")
 
     cmd = [
-        "claude", "--print", "--output-format", "text",
-        "--model", model,
+        "claude",
+        "--print",
+        "--output-format",
+        "text",
+        "--model",
+        model,
         prompt,
     ]
 
@@ -177,7 +203,11 @@ def run_conductor(
     # All subtasks share a group_id so they work on one branch and produce one PR.
     group_id = f"wc-grp-{uuid.uuid4().hex[:6]}" if len(tasks) > 1 else None
     created = _create_tasks_from_plan(
-        tasks, store, base_branch, emit, group_id=group_id,
+        tasks,
+        store,
+        base_branch,
+        emit,
+        group_id=group_id,
     )
     if group_id:
         emit(f"Group: {group_id} (shared branch: feature/{group_id})")
@@ -279,6 +309,6 @@ def _create_tasks_from_plan(
         created.append(record)
 
         dep_str = f" (deps: {', '.join(resolved_deps)})" if resolved_deps else ""
-        emit(f"  [{i+1}/{len(plan)}] {task_id}: {spec['title']}{dep_str}")
+        emit(f"  [{i + 1}/{len(plan)}] {task_id}: {spec['title']}{dep_str}")
 
     return created

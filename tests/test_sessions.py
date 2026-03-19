@@ -1,4 +1,5 @@
 """Tests for session management."""
+
 from __future__ import annotations
 
 import json
@@ -100,6 +101,7 @@ class TestActiveSessions:
         sessions = list_sessions()
         sessions[0].pid = 99999999
         from warchief.sessions import _save_sessions
+
         _save_sessions(sessions)
 
         active = get_active_sessions()
@@ -129,12 +131,15 @@ class TestCleanup:
 
         # Manually add a session for nonexistent path
         sessions = list_sessions()
-        sessions.append(Session(
-            project_root="/nonexistent/path/gone",
-            project_name="Gone",
-            status="stopped",
-        ))
+        sessions.append(
+            Session(
+                project_root="/nonexistent/path/gone",
+                project_name="Gone",
+                status="stopped",
+            )
+        )
         from warchief.sessions import _save_sessions
+
         _save_sessions(sessions)
 
         removed = cleanup_stale_sessions()

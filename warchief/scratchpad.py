@@ -4,8 +4,10 @@ Each task gets a scratchpad file in .warchief/scratchpads/{task_id}.md.
 Agents append structured handoff notes; the next agent reads them.
 This replaces raw agent log injection with focused, curated context.
 """
+
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 
@@ -17,6 +19,8 @@ def _scratchpad_dir(project_root: Path) -> Path:
 
 
 def _scratchpad_path(project_root: Path, task_id: str) -> Path:
+    if not re.match(r"^[a-zA-Z0-9_-]+$", task_id):
+        raise ValueError(f"Invalid task_id format: {task_id!r}")
     return _scratchpad_dir(project_root) / f"{task_id}.md"
 
 
@@ -79,7 +83,7 @@ def read_scratchpad_for_role(
                 break
         if first_entry_end:
             header = "\n".join(lines[:first_entry_end])
-            tail = full[-((_MAX_SCRATCHPAD_CHARS - len(header) - 20)):]
+            tail = full[-(_MAX_SCRATCHPAD_CHARS - len(header) - 20) :]
             # Find clean boundary in tail
             idx = tail.find("\n### [")
             if idx >= 0:

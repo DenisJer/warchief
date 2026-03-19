@@ -7,6 +7,7 @@ Two backends:
 The TUI uses `rich.live` for auto-refreshing rather than `textual`
 to keep dependencies minimal while still providing a live-updating view.
 """
+
 from __future__ import annotations
 
 import signal
@@ -59,9 +60,11 @@ def _build_plain_snapshot(store: TaskStore, project_root: Path) -> str:
     # Pipeline overview
     paused_str = " [PAUSED]" if config.paused else ""
     lines.append(f"  Status: {'Active' if not config.paused else 'Paused'}{paused_str}")
-    lines.append(f"  Tasks: {metrics.total_tasks} total | "
-                 f"{metrics.open_tasks} open | {metrics.in_progress_tasks} active | "
-                 f"{metrics.blocked_tasks} blocked | {metrics.closed_tasks} done")
+    lines.append(
+        f"  Tasks: {metrics.total_tasks} total | "
+        f"{metrics.open_tasks} open | {metrics.in_progress_tasks} active | "
+        f"{metrics.blocked_tasks} blocked | {metrics.closed_tasks} done"
+    )
     lines.append(f"  Agents: {len(agents)} running / {config.max_total_agents} max")
     if metrics.avg_completion_time > 0:
         lines.append(f"  Avg completion: {format_duration(metrics.avg_completion_time)}")
@@ -152,7 +155,9 @@ def _build_plain_snapshot(store: TaskStore, project_root: Path) -> str:
             filled = int(bar_len * min(pct, 100) / 100)
             bar = "█" * filled + "░" * (bar_len - filled)
             warn = " !! OVER" if pct >= 100 else ""
-            lines.append(f"    Budget:      [{bar}] {pct:.0f}% of ${config.budget.session_limit:.2f}{warn}")
+            lines.append(
+                f"    Budget:      [{bar}] {pct:.0f}% of ${config.budget.session_limit:.2f}{warn}"
+            )
         if config.budget.per_task_default > 0:
             lines.append(f"    Per-task:    ${config.budget.per_task_default:.2f} default")
     else:
@@ -307,7 +312,10 @@ def _run_rich_dashboard(project_root: Path, refresh_interval: float) -> None:
         if cost_summary.entries:
             token_text = Text()
             token_text.append(f"  In:    {cost_summary.total_input_tokens:,}\n", style="cyan")
-            token_text.append(f"  Cache: {cost_summary.total_cache_read_tokens:,}r / {cost_summary.total_cache_write_tokens:,}w\n", style="dim cyan")
+            token_text.append(
+                f"  Cache: {cost_summary.total_cache_read_tokens:,}r / {cost_summary.total_cache_write_tokens:,}w\n",
+                style="dim cyan",
+            )
             token_text.append(f"  Out:   {cost_summary.total_output_tokens:,}", style="green")
         else:
             token_text = Text("  (no data yet)", style="dim")
@@ -344,7 +352,9 @@ def _run_rich_dashboard(project_root: Path, refresh_interval: float) -> None:
         layout["events"].update(Panel(event_table))
 
         # Footer
-        footer = Text(f" Press Ctrl+C to exit  |  Refresh: {refresh_interval}s  |  {time.strftime('%H:%M:%S')}")
+        footer = Text(
+            f" Press Ctrl+C to exit  |  Refresh: {refresh_interval}s  |  {time.strftime('%H:%M:%S')}"
+        )
         layout["footer"].update(Panel(footer, style="dim"))
 
         return layout
@@ -365,17 +375,29 @@ def _status_icon(status: str) -> str:
 
 def _event_icon(event_type: str) -> str:
     return {
-        "spawn": "+", "advance": ">", "crash": "*", "block": "!",
-        "reject": "x", "zombie": "z", "mass_death": "!!", "comment": "#",
+        "spawn": "+",
+        "advance": ">",
+        "crash": "*",
+        "block": "!",
+        "reject": "x",
+        "zombie": "z",
+        "mass_death": "!!",
+        "comment": "#",
     }.get(event_type, ".")
 
 
 def _rich_status_color(status: str) -> str:
-    return {"open": "white", "in_progress": "green", "blocked": "red", "closed": "dim"}.get(status, "white")
+    return {"open": "white", "in_progress": "green", "blocked": "red", "closed": "dim"}.get(
+        status, "white"
+    )
 
 
 def _rich_event_color(event_type: str) -> str:
     return {
-        "spawn": "green", "advance": "cyan", "crash": "red bold",
-        "block": "red", "reject": "yellow", "mass_death": "red bold",
+        "spawn": "green",
+        "advance": "cyan",
+        "crash": "red bold",
+        "block": "red",
+        "reject": "yellow",
+        "mass_death": "red bold",
     }.get(event_type, "white")

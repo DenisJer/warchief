@@ -1,4 +1,5 @@
 """Event feed — real-time display of pipeline activity."""
+
 from __future__ import annotations
 
 import time

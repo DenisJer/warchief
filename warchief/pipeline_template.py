@@ -1,4 +1,5 @@
 """Pipeline template loader — reads pipelines/*.toml and builds stage routing."""
+
 from __future__ import annotations
 
 import logging

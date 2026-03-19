@@ -1,4 +1,5 @@
 """Tests for agent spawner."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -44,6 +45,7 @@ class TestAgentNaming:
     def test_sequential_names(self):
         # Reset for deterministic test
         import warchief.spawner as sp
+
         old_idx = sp._name_index
         sp._name_index = 0
 
@@ -57,6 +59,7 @@ class TestAgentNaming:
 
     def test_wraps_around(self):
         import warchief.spawner as sp
+
         old_idx = sp._name_index
         sp._name_index = len(_WARCHIEFS) - 1
 
@@ -72,12 +75,19 @@ class TestAgentNaming:
 class TestBuildClaudeCommand:
     def test_basic_command(self, registry: RoleRegistry, config: Config):
         task = TaskRecord(
-            id="wc-t01", title="Build login",
+            id="wc-t01",
+            title="Build login",
             description="Build it well",
-            labels=["frontend"], base_branch="main",
+            labels=["frontend"],
+            base_branch="main",
         )
         cmd, cwd, _prompt = build_claude_command(
-            "developer", registry, task, None, Path("/project"), config,
+            "developer",
+            registry,
+            task,
+            None,
+            Path("/project"),
+            config,
         )
         assert cmd[0] == "claude"
         assert "--print" in cmd
@@ -87,7 +97,12 @@ class TestBuildClaudeCommand:
     def test_allowed_tools_included(self, registry: RoleRegistry, config: Config):
         task = TaskRecord(id="wc-t01", title="Test")
         cmd, cwd, _prompt = build_claude_command(
-            "developer", registry, task, None, Path("/project"), config,
+            "developer",
+            registry,
+            task,
+            None,
+            Path("/project"),
+            config,
         )
         assert "--allowedTools" in cmd
         # Developer should have Bash in allowed tools
@@ -99,7 +114,12 @@ class TestBuildClaudeCommand:
         task = TaskRecord(id="wc-t01", title="Test")
         wt = Path("/project/.warchief-worktrees/dev-thrall")
         cmd, cwd, _prompt = build_claude_command(
-            "developer", registry, task, wt, Path("/project"), config,
+            "developer",
+            registry,
+            task,
+            wt,
+            Path("/project"),
+            config,
         )
         assert cwd == str(wt)
 
@@ -107,7 +127,12 @@ class TestBuildClaudeCommand:
         config = Config(role_models={"developer": "claude-opus-4-6"})
         task = TaskRecord(id="wc-t01", title="Test")
         cmd, cwd, _prompt = build_claude_command(
-            "developer", registry, task, None, Path("/project"), config,
+            "developer",
+            registry,
+            task,
+            None,
+            Path("/project"),
+            config,
         )
         model_idx = cmd.index("--model")
         assert cmd[model_idx + 1] == "claude-opus-4-6"

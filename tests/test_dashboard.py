@@ -1,4 +1,5 @@
 """Tests for dashboard rendering."""
+
 from __future__ import annotations
 
 import time
@@ -34,14 +35,22 @@ class TestDashboardSnapshot:
         assert "AGENTS" in output
 
     def test_dashboard_with_tasks(self, project_root: Path, store: TaskStore):
-        store.create_task(TaskRecord(
-            id="wc-d1", title="Login page",
-            status="in_progress", stage="development",
-        ))
-        store.create_task(TaskRecord(
-            id="wc-d2", title="Review auth",
-            status="open", stage="reviewing",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-d1",
+                title="Login page",
+                status="in_progress",
+                stage="development",
+            )
+        )
+        store.create_task(
+            TaskRecord(
+                id="wc-d2",
+                title="Review auth",
+                status="open",
+                stage="reviewing",
+            )
+        )
 
         output = render_dashboard_snapshot(project_root)
         assert "wc-d1" in output
@@ -50,29 +59,42 @@ class TestDashboardSnapshot:
         assert "REVIEWING" in output
 
     def test_dashboard_with_agents(self, project_root: Path, store: TaskStore):
-        store.register_agent(AgentRecord(
-            id="developer-thrall", role="developer", status="alive",
-            current_task="wc-a1", pid=12345, spawned_at=time.time(),
-        ))
+        store.register_agent(
+            AgentRecord(
+                id="developer-thrall",
+                role="developer",
+                status="alive",
+                current_task="wc-a1",
+                pid=12345,
+                spawned_at=time.time(),
+            )
+        )
 
         output = render_dashboard_snapshot(project_root)
         assert "developer-thrall" in output
         assert "developer" in output
 
     def test_dashboard_with_events(self, project_root: Path, store: TaskStore):
-        store.log_event(EventRecord(
-            event_type="spawn", task_id="wc-e1",
-            agent_id="developer-thrall",
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="spawn",
+                task_id="wc-e1",
+                agent_id="developer-thrall",
+            )
+        )
 
         output = render_dashboard_snapshot(project_root)
         assert "spawn" in output
         assert "RECENT EVENTS" in output
 
     def test_dashboard_with_blocked(self, project_root: Path, store: TaskStore):
-        store.create_task(TaskRecord(
-            id="wc-b1", title="Stuck task", status="blocked",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-b1",
+                title="Stuck task",
+                status="blocked",
+            )
+        )
 
         output = render_dashboard_snapshot(project_root)
         assert "PROBLEMS" in output

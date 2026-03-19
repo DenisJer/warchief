@@ -1,4 +1,5 @@
 """Heartbeat system — agents write heartbeats, watcher detects zombies."""
+
 from __future__ import annotations
 
 import logging

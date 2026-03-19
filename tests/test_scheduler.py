@@ -1,4 +1,5 @@
 """Tests for the scheduler."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -56,11 +57,17 @@ class TestScheduler:
     @patch("warchief.scheduler.run_preflight", return_value=[])
     def test_dispatch_spawns_agent(self, mock_pf, mock_spawn, scheduler, store):
         mock_spawn.return_value = AgentRecord(
-            id="dev-test", role="developer", status="alive",
+            id="dev-test",
+            role="developer",
+            status="alive",
         )
-        store.create_task(TaskRecord(
-            id="wc-s02", title="Task", status="open",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-s02",
+                title="Task",
+                status="open",
+            )
+        )
         scheduler.create_context("wc-s02", "developer")
 
         spawned = scheduler.dispatch_pending()
@@ -70,9 +77,13 @@ class TestScheduler:
     @patch("warchief.scheduler.spawn_agent")
     @patch("warchief.scheduler.run_preflight", return_value=["error"])
     def test_preflight_fail_skips(self, mock_pf, mock_spawn, scheduler, store):
-        store.create_task(TaskRecord(
-            id="wc-s03", title="Task", status="open",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-s03",
+                title="Task",
+                status="open",
+            )
+        )
         scheduler.create_context("wc-s03", "developer")
 
         spawned = scheduler.dispatch_pending()
@@ -90,10 +101,14 @@ class TestScheduler:
         assert spawned == 0
 
     def test_skips_assigned_task(self, scheduler, store):
-        store.create_task(TaskRecord(
-            id="wc-s05", title="Task", status="open",
-            assigned_agent="someone",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-s05",
+                title="Task",
+                status="open",
+                assigned_agent="someone",
+            )
+        )
         scheduler.create_context("wc-s05", "developer")
 
         spawned = scheduler.dispatch_pending()

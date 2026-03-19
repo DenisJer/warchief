@@ -1,4 +1,5 @@
 """Tests for the daemon."""
+
 from __future__ import annotations
 
 import os
@@ -42,6 +43,7 @@ class TestDaemonStatus:
 
     def test_with_heartbeat(self, project_root: Path):
         import time
+
         hb_path = project_root / ".warchief" / "daemon_heartbeat"
         hb_path.write_text(str(time.time()))
 
@@ -94,6 +96,7 @@ class TestDaemonInit:
         lock_path.write_text(str(os.getpid()))
 
         from warchief.config import Config
+
         daemon._ensure_watcher(Config())
         # Should not try to start a new watcher
 
@@ -105,5 +108,6 @@ class TestDaemonInit:
         lock_path.write_text("99999")
 
         from warchief.config import Config
+
         daemon._ensure_watcher(Config())
         mock_start.assert_called_once()

@@ -1,4 +1,5 @@
 """Doctor — health checks for the Warchief system."""
+
 from __future__ import annotations
 
 import logging
@@ -48,7 +49,9 @@ def check_warchief_dir(project_root: Path) -> CheckResult:
     wc_dir = project_root / ".warchief"
     if wc_dir.exists() and wc_dir.is_dir():
         return CheckResult("warchief_dir", True, ".warchief directory exists")
-    return CheckResult("warchief_dir", False, ".warchief directory missing — run 'warchief init'", "error")
+    return CheckResult(
+        "warchief_dir", False, ".warchief directory missing — run 'warchief init'", "error"
+    )
 
 
 def check_database(project_root: Path) -> CheckResult:
@@ -105,7 +108,9 @@ def check_daemon(project_root: Path) -> CheckResult:
             last_hb = float(hb_path.read_text().strip())
             age = time.time() - last_hb
             if age > 120:
-                return CheckResult("daemon", False, f"Daemon heartbeat stale ({age:.0f}s old)", "warning")
+                return CheckResult(
+                    "daemon", False, f"Daemon heartbeat stale ({age:.0f}s old)", "warning"
+                )
         return CheckResult("daemon", True, f"Daemon running (PID {pid})")
     except (ValueError, ProcessLookupError, PermissionError):
         return CheckResult("daemon", False, "Daemon PID file stale", "warning")
@@ -114,11 +119,13 @@ def check_daemon(project_root: Path) -> CheckResult:
 def check_disk_space(project_root: Path) -> CheckResult:
     """Check that there's enough disk space."""
     usage = shutil.disk_usage(project_root)
-    free_gb = usage.free / (1024 ** 3)
+    free_gb = usage.free / (1024**3)
     if free_gb < 1.0:
         return CheckResult("disk_space", False, f"Low disk space: {free_gb:.1f} GB free", "error")
     if free_gb < 5.0:
-        return CheckResult("disk_space", False, f"Disk space warning: {free_gb:.1f} GB free", "warning")
+        return CheckResult(
+            "disk_space", False, f"Disk space warning: {free_gb:.1f} GB free", "warning"
+        )
     return CheckResult("disk_space", True, f"{free_gb:.1f} GB free")
 
 
@@ -144,7 +151,8 @@ def check_agents(project_root: Path, store: TaskStore) -> CheckResult:
 
     if zombies:
         return CheckResult(
-            "agents", False,
+            "agents",
+            False,
             f"{len(zombies)} zombie agent(s): {', '.join(zombies)}",
             "warning",
         )
@@ -157,7 +165,8 @@ def check_orphaned_tasks(store: TaskStore) -> CheckResult:
     if orphans:
         ids = [t.id for t in orphans]
         return CheckResult(
-            "orphaned_tasks", False,
+            "orphaned_tasks",
+            False,
             f"{len(orphans)} orphaned task(s): {', '.join(ids)}",
             "warning",
         )
@@ -176,7 +185,8 @@ def check_worktrees(project_root: Path, store: TaskStore) -> CheckResult:
 
     if orphaned:
         return CheckResult(
-            "worktrees", False,
+            "worktrees",
+            False,
             f"{len(orphaned)} orphaned worktree(s): {', '.join(orphaned)}",
             "warning",
         )
@@ -188,7 +198,8 @@ def check_claude_cli() -> CheckResult:
     claude_path = shutil.which("claude")
     if not claude_path:
         return CheckResult(
-            "claude_cli", False,
+            "claude_cli",
+            False,
             "Claude CLI not found on PATH — install from https://claude.ai/download",
             "error",
         )
@@ -196,13 +207,17 @@ def check_claude_cli() -> CheckResult:
     try:
         result = subprocess.run(
             ["claude", "--version"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         version = result.stdout.strip() or result.stderr.strip()
         version_short = version.split("\n")[0][:80] if version else "unknown version"
         return CheckResult("claude_cli", True, f"Claude CLI found: {version_short}")
     except (subprocess.TimeoutExpired, OSError):
-        return CheckResult("claude_cli", True, f"Claude CLI found at {claude_path} (version check timed out)")
+        return CheckResult(
+            "claude_cli", True, f"Claude CLI found at {claude_path} (version check timed out)"
+        )
 
 
 def check_tmux() -> CheckResult:
@@ -210,13 +225,17 @@ def check_tmux() -> CheckResult:
     tmux_path = shutil.which("tmux")
     if not tmux_path:
         return CheckResult(
-            "tmux", False,
+            "tmux",
+            False,
             "tmux not found — install with 'brew install tmux' for the interactive UI",
             "warning",
         )
     try:
         result = subprocess.run(
-            ["tmux", "-V"], capture_output=True, text=True, timeout=5,
+            ["tmux", "-V"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         version = result.stdout.strip()
         return CheckResult("tmux", True, f"tmux found: {version}")
@@ -229,7 +248,8 @@ def check_gh_cli() -> CheckResult:
     gh_path = shutil.which("gh")
     if not gh_path:
         return CheckResult(
-            "gh_cli", False,
+            "gh_cli",
+            False,
             "GitHub CLI (gh) not found on PATH — install from https://cli.github.com/ "
             "(required for PR creation)",
             "error",
@@ -238,11 +258,14 @@ def check_gh_cli() -> CheckResult:
     try:
         result = subprocess.run(
             ["gh", "auth", "status"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode != 0:
             return CheckResult(
-                "gh_cli", False,
+                "gh_cli",
+                False,
                 "GitHub CLI not authenticated — run 'gh auth login'",
                 "error",
             )
@@ -269,7 +292,10 @@ def check_git(project_root: Path) -> CheckResult:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--is-inside-work-tree"],
-            cwd=project_root, capture_output=True, text=True, timeout=5,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode != 0:
             return CheckResult("git", False, f"{project_root} is not a git repository", "error")
@@ -280,7 +306,10 @@ def check_git(project_root: Path) -> CheckResult:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            cwd=project_root, capture_output=True, text=True, timeout=5,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode != 0:
             return CheckResult("git", False, "Git repo has no commits", "warning")
@@ -296,11 +325,15 @@ def check_git_user(project_root: Path) -> CheckResult:
     Detects local (repo-level) vs global config so users with
     multiple identities (work/personal) can see which one agents will use.
     """
+
     def _git_config(scope: str, key: str) -> str | None:
         try:
             result = subprocess.run(
                 ["git", "config", f"--{scope}", key],
-                cwd=project_root, capture_output=True, text=True, timeout=5,
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             val = result.stdout.strip()
             return val if val else None
@@ -323,29 +356,31 @@ def check_git_user(project_root: Path) -> CheckResult:
         if not eff_email:
             missing.append("user.email")
         return CheckResult(
-            "git_user", False,
+            "git_user",
+            False,
             f"Git {', '.join(missing)} not configured — agents will fail to commit. "
-            f"Run: git config user.name \"Your Name\" && git config user.email \"you@example.com\"",
+            f'Run: git config user.name "Your Name" && git config user.email "you@example.com"',
             "error",
         )
 
     # Build info message showing source
     parts = []
     if local_name:
-        parts.append(f"name=\"{local_name}\" (local)")
+        parts.append(f'name="{local_name}" (local)')
     elif global_name:
-        parts.append(f"name=\"{global_name}\" (global)")
+        parts.append(f'name="{global_name}" (global)')
 
     if local_email:
-        parts.append(f"email=\"{local_email}\" (local)")
+        parts.append(f'email="{local_email}" (local)')
     elif global_email:
-        parts.append(f"email=\"{global_email}\" (global)")
+        parts.append(f'email="{global_email}" (global)')
 
     # Warn if using global config in a repo (might be wrong identity)
     if (not local_name or not local_email) and (global_name or global_email):
-        hint = " — set local config if this is a work project: git config user.email \"work@company.com\""
+        hint = ' — set local config if this is a work project: git config user.email "work@company.com"'
         return CheckResult(
-            "git_user", True,
+            "git_user",
+            True,
             f"Git user: {', '.join(parts)}{hint}",
         )
 
@@ -369,7 +404,8 @@ def check_node() -> CheckResult:
     node_path = shutil.which("node")
     if not node_path:
         return CheckResult(
-            "node", False,
+            "node",
+            False,
             "Node.js not found on PATH — install from https://nodejs.org/ "
             "(required for frontend projects)",
             "warning",
@@ -377,7 +413,9 @@ def check_node() -> CheckResult:
     try:
         result = subprocess.run(
             ["node", "--version"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         version = result.stdout.strip()
 
@@ -387,7 +425,10 @@ def check_node() -> CheckResult:
         extras = []
         if npm_path:
             npm_ver = subprocess.run(
-                ["npm", "--version"], capture_output=True, text=True, timeout=5,
+                ["npm", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
             ).stdout.strip()
             extras.append(f"npm {npm_ver}")
         else:
@@ -410,8 +451,10 @@ def check_playwright(project_root: Path) -> CheckResult:
 
     # Check if project uses Playwright (config file exists)
     pw_config_names = [
-        "playwright.config.ts", "playwright.config.js",
-        "playwright.config.mjs", "playwright.config.cjs",
+        "playwright.config.ts",
+        "playwright.config.js",
+        "playwright.config.mjs",
+        "playwright.config.cjs",
     ]
     has_config = any((project_root / cfg).exists() for cfg in pw_config_names)
 
@@ -421,6 +464,7 @@ def check_playwright(project_root: Path) -> CheckResult:
     if pkg_json.exists():
         try:
             import json
+
             pkg = json.loads(pkg_json.read_text())
             all_deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
             has_dep = "@playwright/test" in all_deps or "playwright" in all_deps
@@ -428,24 +472,33 @@ def check_playwright(project_root: Path) -> CheckResult:
             pass
 
     if not has_config and not has_dep:
-        return CheckResult("playwright", True, "Not used in this project", )
+        return CheckResult(
+            "playwright",
+            True,
+            "Not used in this project",
+        )
 
     # Check if Playwright CLI works
     try:
         result = subprocess.run(
             ["npx", "playwright", "--version"],
-            cwd=project_root, capture_output=True, text=True, timeout=15,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         if result.returncode != 0:
             return CheckResult(
-                "playwright", False,
+                "playwright",
+                False,
                 "Playwright CLI failed — run 'npm install' in your project",
                 "warning",
             )
         pw_version = result.stdout.strip().split("\n")[0]
     except (subprocess.TimeoutExpired, OSError):
         return CheckResult(
-            "playwright", False,
+            "playwright",
+            False,
             "Playwright CLI check timed out",
             "warning",
         )
@@ -455,9 +508,9 @@ def check_playwright(project_root: Path) -> CheckResult:
 
     # Method 1: Check common browser cache locations
     cache_dirs = [
-        Path.home() / ".cache" / "ms-playwright",           # Linux
+        Path.home() / ".cache" / "ms-playwright",  # Linux
         Path.home() / "Library" / "Caches" / "ms-playwright",  # macOS
-        Path.home() / "AppData" / "Local" / "ms-playwright",   # Windows
+        Path.home() / "AppData" / "Local" / "ms-playwright",  # Windows
     ]
     for cache_dir in cache_dirs:
         if cache_dir.exists() and any(cache_dir.iterdir()):
@@ -472,14 +525,16 @@ def check_playwright(project_root: Path) -> CheckResult:
 
     if not browsers_installed:
         return CheckResult(
-            "playwright", False,
+            "playwright",
+            False,
             f"Playwright {pw_version} found but browsers NOT installed — "
             f"run 'npx playwright install' to download browser binaries",
             "warning",
         )
 
     return CheckResult(
-        "playwright", True,
+        "playwright",
+        True,
         f"Playwright {pw_version} with browsers installed",
     )
 
@@ -487,6 +542,7 @@ def check_playwright(project_root: Path) -> CheckResult:
 def check_test_frameworks(project_root: Path) -> CheckResult:
     """Detect test frameworks configured in the project."""
     from warchief.test_runner import detect_test_commands
+
     detected = detect_test_commands(project_root)
 
     parts = []
@@ -497,14 +553,16 @@ def check_test_frameworks(project_root: Path) -> CheckResult:
 
     if not parts:
         return CheckResult(
-            "test_frameworks", False,
+            "test_frameworks",
+            False,
             "No test framework detected — tester agent will set one up",
             "info",
         )
 
     source = f" (from {detected.source})" if detected.source else ""
     return CheckResult(
-        "test_frameworks", True,
+        "test_frameworks",
+        True,
         f"Detected: {', '.join(parts)}{source}",
     )
 
@@ -544,7 +602,9 @@ def run_doctor(project_root: Path) -> HealthReport:
             report.checks.append(check_worktrees(project_root, store))
             store.close()
         except Exception as e:
-            report.checks.append(CheckResult("store_checks", False, f"Could not run DB checks: {e}", "error"))
+            report.checks.append(
+                CheckResult("store_checks", False, f"Could not run DB checks: {e}", "error")
+            )
 
     return report
 

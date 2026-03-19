@@ -4,6 +4,7 @@ Hooks enforce agent boundaries at the tool-use level:
 - verify-task-updated: Stop hook — blocks exit if task still in_progress
 - validate-warchief-transition: PreToolUse — validates opus update commands
 """
+
 from __future__ import annotations
 
 import json
@@ -52,18 +53,22 @@ def install_agent_hooks(
     _write_git_pre_push_hook(worktree_path)
 
     # Read-only roles: block git commit/push/add via PreToolUse
-    readonly_roles = {"investigator", "reviewer", "security_reviewer", "planner", "challenger"}
+    readonly_roles = {
+        "investigator",
+        "reviewer",
+        "security_reviewer",
+        "planner",
+        "challenger",
+        "tester",
+    }
     bash_guard_hooks = []
     if role in readonly_roles:
-        bash_guard_hooks.append({
-            "matcher": "Bash",
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": "python3 .claude/hooks/bash_guard.py"
-                }
-            ]
-        })
+        bash_guard_hooks.append(
+            {
+                "matcher": "Bash",
+                "hooks": [{"type": "command", "command": "python3 .claude/hooks/bash_guard.py"}],
+            }
+        )
 
     # Write settings.json with hook configuration
     # Use relative path so settings.json works regardless of worktree location
@@ -75,9 +80,9 @@ def install_agent_hooks(
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "python3 .claude/hooks/verify_task_updated.py"
+                            "command": "python3 .claude/hooks/verify_task_updated.py",
                         }
-                    ]
+                    ],
                 }
             ],
             **({"PreToolUse": bash_guard_hooks} if bash_guard_hooks else {}),
@@ -199,7 +204,7 @@ READONLY_BLOCKED = ["git commit", "git push", "git add", "npm install", "pip ins
 
 def main():
     role = os.environ.get("WARCHIEF_ROLE", "")
-    readonly_roles = {"investigator", "reviewer", "security_reviewer", "planner", "challenger"}
+    readonly_roles = {"investigator", "reviewer", "security_reviewer", "planner", "challenger", "tester"}
 
     try:
         hook_input = json.loads(sys.stdin.read())
@@ -249,7 +254,7 @@ def _write_git_pre_push_hook(worktree_path: Path) -> None:
         # It's a worktree — read the gitdir path
         content = git_file.read_text().strip()
         if content.startswith("gitdir: "):
-            gitdir = Path(content[len("gitdir: "):])
+            gitdir = Path(content[len("gitdir: ") :])
             if not gitdir.is_absolute():
                 gitdir = (worktree_path / gitdir).resolve()
             git_hooks_dir = gitdir / "hooks"
@@ -257,17 +262,17 @@ def _write_git_pre_push_hook(worktree_path: Path) -> None:
     git_hooks_dir.mkdir(parents=True, exist_ok=True)
     hook_path = git_hooks_dir / "pre-push"
     hook_path.write_text(
-        '#!/bin/sh\n'
-        '# Warchief: block pushes to main/master\n'
+        "#!/bin/sh\n"
+        "# Warchief: block pushes to main/master\n"
         'remote="$1"\n'
-        'while read local_ref local_sha remote_ref remote_sha; do\n'
+        "while read local_ref local_sha remote_ref remote_sha; do\n"
         '  case "$remote_ref" in\n'
-        '    refs/heads/main|refs/heads/master)\n'
+        "    refs/heads/main|refs/heads/master)\n"
         '      echo "ERROR: Pushing to main/master is blocked by warchief." >&2\n'
-        '      exit 1\n'
-        '      ;;\n'
-        '  esac\n'
-        'done\n'
+        "      exit 1\n"
+        "      ;;\n"
+        "  esac\n"
+        "done\n"
     )
     hook_path.chmod(0o755)
 
@@ -275,7 +280,14 @@ def _write_git_pre_push_hook(worktree_path: Path) -> None:
 def _write_worktree_gitignore(worktree_path: Path) -> None:
     """Ensure .gitignore in worktree blocks warchief/claude artifacts from commits."""
     gitignore_path = worktree_path / ".gitignore"
-    warchief_entries = [".claude/", ".warchief/", ".warchief-worktrees/", ".claudeignore", "debug/", "CLAUDE.md"]
+    warchief_entries = [
+        ".claude/",
+        ".warchief/",
+        ".warchief-worktrees/",
+        ".claudeignore",
+        "debug/",
+        "CLAUDE.md",
+    ]
 
     existing_lines: list[str] = []
     if gitignore_path.exists():

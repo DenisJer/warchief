@@ -1,4 +1,5 @@
 """Agent spawner — creates Claude Code processes for tasks."""
+
 from __future__ import annotations
 
 import json
@@ -23,21 +24,93 @@ log = logging.getLogger("warchief.spawner")
 
 # WoW character name pool — used to generate memorable agent IDs
 _WARCHIEFS = [
-    "thrall", "sylvanas", "garrosh", "voljin", "cairne", "rexxar", "saurfang",
-    "nazgrel", "drektar", "grommash", "orgrim", "durotan", "guldan", "nerzhul",
-    "zuljin", "rokhan", "baine", "chromie", "valeera", "garona", "maiev",
-    "illidan", "tyrande", "malfurion", "arthas", "jaina", "uther", "anduin",
-    "varian", "magni", "muradin", "falstad", "gelbin", "mekkatorque", "genn",
-    "tess", "liadrin", "lorthemar", "halduron", "rommath", "khadgar",
-    "medivh", "kadgar", "aegwynn", "antonidas", "rhonin", "krasus",
-    "alexstrasza", "ysera", "nozdormu", "kalecgos", "wrathion",
-    "bolvar", "tirion", "mograine", "whitemane", "fairbanks",
-    "taran", "turalyon", "alleria", "vereesa", "nathanos",
-    "thalyssra", "oculeth", "valtrois", "stellagosa", "ebonhorn",
-    "mayla", "lasan", "spiritwalker", "hamuul", "dezco",
-    "chen", "lili", "taran_zhu", "aysa", "ji_firepaw",
-    "rastakhan", "talanji", "bwonsamdi", "zuldazar", "gonk",
-    "azshara", "nzoth", "yoggsaron", "cthun", "xalatath",
+    "thrall",
+    "sylvanas",
+    "garrosh",
+    "voljin",
+    "cairne",
+    "rexxar",
+    "saurfang",
+    "nazgrel",
+    "drektar",
+    "grommash",
+    "orgrim",
+    "durotan",
+    "guldan",
+    "nerzhul",
+    "zuljin",
+    "rokhan",
+    "baine",
+    "chromie",
+    "valeera",
+    "garona",
+    "maiev",
+    "illidan",
+    "tyrande",
+    "malfurion",
+    "arthas",
+    "jaina",
+    "uther",
+    "anduin",
+    "varian",
+    "magni",
+    "muradin",
+    "falstad",
+    "gelbin",
+    "mekkatorque",
+    "genn",
+    "tess",
+    "liadrin",
+    "lorthemar",
+    "halduron",
+    "rommath",
+    "khadgar",
+    "medivh",
+    "kadgar",
+    "aegwynn",
+    "antonidas",
+    "rhonin",
+    "krasus",
+    "alexstrasza",
+    "ysera",
+    "nozdormu",
+    "kalecgos",
+    "wrathion",
+    "bolvar",
+    "tirion",
+    "mograine",
+    "whitemane",
+    "fairbanks",
+    "taran",
+    "turalyon",
+    "alleria",
+    "vereesa",
+    "nathanos",
+    "thalyssra",
+    "oculeth",
+    "valtrois",
+    "stellagosa",
+    "ebonhorn",
+    "mayla",
+    "lasan",
+    "spiritwalker",
+    "hamuul",
+    "dezco",
+    "chen",
+    "lili",
+    "taran_zhu",
+    "aysa",
+    "ji_firepaw",
+    "rastakhan",
+    "talanji",
+    "bwonsamdi",
+    "zuldazar",
+    "gonk",
+    "azshara",
+    "nzoth",
+    "yoggsaron",
+    "cthun",
+    "xalatath",
 ]
 _name_index = 0
 
@@ -83,7 +156,15 @@ def build_claude_command(
             if candidate.exists():
                 prompt_path = candidate
 
-    cmd = ["claude", "--print", "--verbose", "--output-format", "stream-json", "--permission-mode", "auto"]
+    cmd = [
+        "claude",
+        "--print",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--permission-mode",
+        "auto",
+    ]
 
     max_turns = registry.get_max_turns(role_name)
 
@@ -135,15 +216,19 @@ def build_claude_command(
         f"Base branch: {task.base_branch or config.base_branch or 'main'}\n"
         f"\n## Asking Questions\n"
         f"If you are unsure how to proceed or need clarification from the user, ask a question:\n"
-        f"  warchief agent-update --task-id {task.id} --status blocked --question \"Your question here\"\n"
+        f'  warchief agent-update --task-id {task.id} --status blocked --question "Your question here"\n'
         f"Then EXIT immediately. The user will answer, and you will be re-spawned with their response.\n"
     )
 
     task_prompt = hard_rules + task_details
 
     # Developer agents MUST commit AND update status — append explicit instructions
-    log.info("BUILD_CMD: role_name=%r, prompt_path=%s, prompt_path_exists=%s",
-             role_name, prompt_path, prompt_path.exists() if prompt_path else "N/A")
+    log.info(
+        "BUILD_CMD: role_name=%r, prompt_path=%s, prompt_path_exists=%s",
+        role_name,
+        prompt_path,
+        prompt_path.exists() if prompt_path else "N/A",
+    )
     if role_name == "developer":
         task_prompt += (
             "\n## CRITICAL: Before you exit, you MUST do these three things:\n"
@@ -334,6 +419,7 @@ def spawn_agent(
     wt_type = worktree_config.get("type", "none")
     worktree_path: Path | None = None
     from warchief.config import detect_default_branch
+
     base = task.base_branch or config.base_branch or detect_default_branch(project_root)
 
     # Use shared group branch if task belongs to a group
@@ -342,23 +428,33 @@ def spawn_agent(
     try:
         if wt_type == "branch":
             worktree_path = create_branch_worktree(
-                project_root, agent_id, task_branch, base,
+                project_root,
+                agent_id,
+                task_branch,
+                base,
             )
         elif wt_type == "integrator":
             worktree_path = create_integrator_worktree(
-                project_root, agent_id, base, task_branch,
+                project_root,
+                agent_id,
+                base,
+                task_branch,
             )
         elif wt_type == "detached":
             # Reviewer/tester: detach at the feature branch
             commit_ref = task_branch
             try:
                 worktree_path = create_detached_worktree(
-                    project_root, agent_id, commit_ref,
+                    project_root,
+                    agent_id,
+                    commit_ref,
                 )
             except subprocess.CalledProcessError:
                 # Branch may not exist yet; detach at base
                 worktree_path = create_detached_worktree(
-                    project_root, agent_id, base,
+                    project_root,
+                    agent_id,
+                    base,
                 )
     except subprocess.CalledProcessError as e:
         log.error("Failed to create worktree for %s: %s", agent_id, e)
@@ -368,12 +464,16 @@ def spawn_agent(
         new_crash_count = task.crash_count + 1
         if new_crash_count >= 3:
             store.update_task(task.id, status="blocked", crash_count=new_crash_count)
-            store.log_event(EventRecord(
-                event_type="block",
-                task_id=task.id,
-                details={"failure_reason": f"Worktree creation failed {new_crash_count} times: {e}"},
-                actor="spawner",
-            ))
+            store.log_event(
+                EventRecord(
+                    event_type="block",
+                    task_id=task.id,
+                    details={
+                        "failure_reason": f"Worktree creation failed {new_crash_count} times: {e}"
+                    },
+                    actor="spawner",
+                )
+            )
             log.error("Task %s blocked after %d worktree failures", task.id, new_crash_count)
         else:
             store.update_task(task.id, crash_count=new_crash_count)
@@ -382,18 +482,22 @@ def spawn_agent(
     # Install hooks and project context in agent worktree (or project root for no-worktree agents)
     hooks_target = worktree_path or project_root
     from warchief.hooks import install_agent_hooks
+
     try:
         install_agent_hooks(
-            hooks_target, agent_id, task.id, role,
+            hooks_target,
+            agent_id,
+            task.id,
+            role,
             str(project_root / ".warchief" / "warchief.db"),
         )
     except Exception as e:
         log.warning("Failed to install hooks for %s: %s", agent_id, e)
 
     if worktree_path:
-
         # Install project context as CLAUDE.md — agents read it automatically
         from warchief.project_context import install_context_in_worktree
+
         try:
             install_context_in_worktree(project_root, worktree_path)
         except Exception as e:
@@ -402,26 +506,32 @@ def spawn_agent(
     # Check for resumable session (saves tokens on rejection cycles)
     resume_session_id = None
     session_path = project_root / ".warchief" / "sessions" / f"{task.id}-{role}.session"
-    if task.rejection_count > 0 and session_path.exists():
+    if session_path.exists():
         try:
             session_data = json.loads(session_path.read_text())
             resume_session_id = session_data.get("session_id", "")
             # Validate the session's worktree still exists
             old_worktree = session_data.get("worktree", "")
             if resume_session_id and old_worktree and not Path(old_worktree).exists():
-                log.warning("Session worktree gone (%s) — starting fresh for %s",
-                            old_worktree, task.id)
+                log.warning(
+                    "Session worktree gone (%s) — starting fresh for %s", old_worktree, task.id
+                )
                 resume_session_id = None
                 session_path.unlink(missing_ok=True)
             elif resume_session_id:
-                log.info("Found resumable session %s for task %s (%s)",
-                         resume_session_id[:12], task.id, role)
+                log.info(
+                    "Found resumable session %s for task %s (%s)",
+                    resume_session_id[:12],
+                    task.id,
+                    role,
+                )
         except (json.JSONDecodeError, OSError):
             pass
 
     if resume_session_id:
         # Resume mode — send only the rejection feedback as new prompt
         from warchief.prime import build_prime_context
+
         prime_ctx = build_prime_context(task, role, store, project_root)
         task_prompt = (
             f"Your previous work on task {task.id} was REJECTED by the reviewer.\n"
@@ -429,19 +539,34 @@ def spawn_agent(
             f"{prime_ctx}"
         )
         cmd, cwd, _ = build_claude_command(
-            role, registry, task, worktree_path, project_root, config,
+            role,
+            registry,
+            task,
+            worktree_path,
+            project_root,
+            config,
         )
         cmd.extend(["--resume", resume_session_id])
-        log.info("Resuming session for %s: %s (rejection #%d)",
-                 agent_id, resume_session_id[:12], task.rejection_count)
+        log.info(
+            "Resuming session for %s: %s (rejection #%d)",
+            agent_id,
+            resume_session_id[:12],
+            task.rejection_count,
+        )
     else:
         # Fresh spawn — full prompt
         cmd, cwd, task_prompt = build_claude_command(
-            role, registry, task, worktree_path, project_root, config,
+            role,
+            registry,
+            task,
+            worktree_path,
+            project_root,
+            config,
         )
 
         # Inject prime context (previous attempts, rejections, task history)
         from warchief.prime import build_prime_context
+
         prime_ctx = build_prime_context(task, role, store, project_root)
         if prime_ctx:
             task_prompt += "\n" + prime_ctx
@@ -452,7 +577,10 @@ def spawn_agent(
         log.warning(
             "Large prompt for %s on task %s: %d chars (~%d tokens). "
             "Consider reducing task description or clearing old messages.",
-            agent_id, task.id, len(task_prompt), len(task_prompt) // 4,
+            agent_id,
+            task.id,
+            len(task_prompt),
+            len(task_prompt) // 4,
         )
 
     # Set environment variables for hooks
@@ -476,14 +604,18 @@ def spawn_agent(
     # claude (stream-json) -> agent_log_writer.py -> log file
     log_writer_path = Path(__file__).parent / "agent_log_writer.py"
     import sys
+
     python = sys.executable
 
     # Debug: log prompt content indicators
-    log.info("Prompt for %s: len=%d, has_CRITICAL=%s, has_wc-cmd=%s, has_Grunt=%s",
-             agent_id, len(task_prompt),
-             "CRITICAL" in task_prompt,
-             "wc-cmd" in task_prompt,
-             "Grunt" in task_prompt)
+    log.info(
+        "Prompt for %s: len=%d, has_CRITICAL=%s, has_wc-cmd=%s, has_Grunt=%s",
+        agent_id,
+        len(task_prompt),
+        "CRITICAL" in task_prompt,
+        "wc-cmd" in task_prompt,
+        "Grunt" in task_prompt,
+    )
 
     # Write prompt to a temp file for stdin piping
     prompt_path = agent_logs_dir / f"{agent_id}.prompt"
@@ -506,14 +638,23 @@ def spawn_agent(
         finally:
             prompt_file.close()
         # Pipe through log writer for readable output
-        log_writer_proc = subprocess.Popen(
-            [python, str(log_writer_path)],
-            stdin=claude_proc.stdout,
-            stdout=agent_log_file,
-            stderr=subprocess.STDOUT,
-            env=env,  # Pass env so log_writer has WARCHIEF_AGENT/WARCHIEF_DB for cost tracking
-            start_new_session=True,
-        )
+        try:
+            log_writer_proc = subprocess.Popen(
+                [python, str(log_writer_path)],
+                stdin=claude_proc.stdout,
+                stdout=agent_log_file,
+                stderr=subprocess.STDOUT,
+                env=env,  # Pass env so log_writer has WARCHIEF_AGENT/WARCHIEF_DB for cost tracking
+                start_new_session=True,
+            )
+        except (FileNotFoundError, OSError):
+            # Kill the already-spawned claude process
+            try:
+                claude_proc.terminate()
+                claude_proc.wait(timeout=5)
+            except Exception:
+                claude_proc.kill()
+            raise  # Re-raise to hit outer except
         claude_proc.stdout.close()  # Allow SIGPIPE if log writer dies
         agent_log_file.close()  # Popen inherited the fd — we can close our copy
     except FileNotFoundError:
@@ -521,12 +662,14 @@ def spawn_agent(
         log.error("Claude CLI not found. Is 'claude' installed and on PATH?")
         store.update_agent(agent_id, status="dead")
         store.update_task(task.id, status="blocked")
-        store.log_event(EventRecord(
-            event_type="block",
-            task_id=task.id,
-            details={"failure_reason": "Claude CLI not found on PATH"},
-            actor="spawner",
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="block",
+                task_id=task.id,
+                details={"failure_reason": "Claude CLI not found on PATH"},
+                actor="spawner",
+            )
+        )
         return None
     except OSError as e:
         agent_log_file.close()
@@ -558,13 +701,15 @@ def spawn_agent(
     )
 
     # Log event
-    store.log_event(EventRecord(
-        event_type="spawn",
-        task_id=task.id,
-        agent_id=agent_id,
-        details={"role": role, "pid": claude_proc.pid, "worktree": str(worktree_path)},
-        actor="watcher",
-    ))
+    store.log_event(
+        EventRecord(
+            event_type="spawn",
+            task_id=task.id,
+            agent_id=agent_id,
+            details={"role": role, "pid": claude_proc.pid, "worktree": str(worktree_path)},
+            actor="watcher",
+        )
+    )
 
     log.info("Spawned %s (PID %d) for task %s", agent_id, claude_proc.pid, task.id)
     # Attach Popen objects so watcher can reliably get exit codes and cleanup

@@ -1,4 +1,5 @@
 """Agent log writer — converts Claude stream-json output into readable logs."""
+
 from __future__ import annotations
 
 import json

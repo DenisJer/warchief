@@ -1,4 +1,5 @@
 """Tests for log rotation."""
+
 from __future__ import annotations
 
 import os

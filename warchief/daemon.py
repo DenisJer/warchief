@@ -1,4 +1,5 @@
 """Daemon — background process that supervises the watcher and manages health."""
+
 from __future__ import annotations
 
 import json
@@ -11,8 +12,12 @@ import time
 from pathlib import Path
 
 from warchief.config import (
-    Config, DAEMON_HEARTBEAT, MASS_DEATH_THRESHOLD, MASS_DEATH_WINDOW,
-    read_config, setup_logging,
+    Config,
+    DAEMON_HEARTBEAT,
+    MASS_DEATH_THRESHOLD,
+    MASS_DEATH_WINDOW,
+    read_config,
+    setup_logging,
 )
 from warchief.models import EventRecord
 from warchief.recovery import run_full_recovery
@@ -126,7 +131,8 @@ class Daemon:
             now = time.time()
 
             recent_crashes = [
-                e for e in events
+                e
+                for e in events
                 if e.event_type in ("crash", "zombie_recovery", "orphan_recovery")
                 and (now - e.created_at) < MASS_DEATH_WINDOW
             ]
@@ -135,20 +141,24 @@ class Daemon:
                 if not config.paused:
                     log.critical(
                         "MASS DEATH DETECTED: %d agent failures in %ds. Pausing pipeline.",
-                        len(recent_crashes), MASS_DEATH_WINDOW,
+                        len(recent_crashes),
+                        MASS_DEATH_WINDOW,
                     )
                     config.paused = True
                     from warchief.config import write_config
+
                     write_config(self.project_root, config)
 
-                    store.log_event(EventRecord(
-                        event_type="mass_death",
-                        details={
-                            "crash_count": len(recent_crashes),
-                            "window_seconds": MASS_DEATH_WINDOW,
-                        },
-                        actor="daemon",
-                    ))
+                    store.log_event(
+                        EventRecord(
+                            event_type="mass_death",
+                            details={
+                                "crash_count": len(recent_crashes),
+                                "window_seconds": MASS_DEATH_WINDOW,
+                            },
+                            actor="daemon",
+                        )
+                    )
         finally:
             store.close()
 

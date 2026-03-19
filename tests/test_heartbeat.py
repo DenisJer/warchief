@@ -1,4 +1,5 @@
 """Tests for the heartbeat system."""
+
 from __future__ import annotations
 
 import time

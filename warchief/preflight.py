@@ -1,4 +1,5 @@
 """Preflight checks before spawning an agent for a task."""
+
 from __future__ import annotations
 
 import logging
@@ -19,14 +20,18 @@ def check_base_branch(project_root: Path, base_branch: str) -> str | None:
     try:
         subprocess.run(
             ["git", "show-ref", "--verify", f"refs/heads/{base_branch}"],
-            cwd=project_root, check=True, capture_output=True,
+            cwd=project_root,
+            check=True,
+            capture_output=True,
         )
     except subprocess.CalledProcessError:
         # Also check remotes
         try:
             subprocess.run(
                 ["git", "show-ref", "--verify", f"refs/remotes/origin/{base_branch}"],
-                cwd=project_root, check=True, capture_output=True,
+                cwd=project_root,
+                check=True,
+                capture_output=True,
             )
         except subprocess.CalledProcessError:
             return f"Base branch '{base_branch}' not found locally or on origin"
@@ -74,10 +79,13 @@ def check_git_user(project_root: Path) -> str | None:
         try:
             result = subprocess.run(
                 ["git", "config", key],
-                cwd=project_root, capture_output=True, text=True, timeout=5,
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if not result.stdout.strip():
-                return f"Git {key} not configured — run: git config {key} \"value\""
+                return f'Git {key} not configured — run: git config {key} "value"'
         except (subprocess.TimeoutExpired, OSError):
             return f"Could not check git {key}"
     return None
@@ -118,6 +126,7 @@ def run_preflight(
         errors.append(err)
 
     from warchief.config import detect_default_branch
+
     base = task.base_branch or config.base_branch or detect_default_branch(project_root)
     err = check_base_branch(project_root, base)
     if err:
@@ -138,10 +147,7 @@ def run_preflight(
     if errors:
         # Dependency and slot-limit failures are expected during normal operation
         # (tasks waiting on deps, role limits) — log at DEBUG to avoid spam
-        is_routine = all(
-            "Dependency" in e or "limit reached" in e
-            for e in errors
-        )
+        is_routine = all("Dependency" in e or "limit reached" in e for e in errors)
         if is_routine:
             log.debug("Preflight skipped for task %s: %s", task.id, errors)
         else:

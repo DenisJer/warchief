@@ -3,6 +3,7 @@
 Provides a REPL for answering agent questions, viewing status,
 and managing the pipeline without leaving the tmux session.
 """
+
 from __future__ import annotations
 
 import sys
@@ -124,6 +125,7 @@ def run_control(project_root: Path) -> None:
 
 def _get_store(project_root: Path):
     from warchief.task_store import TaskStore
+
     return TaskStore(project_root / ".warchief" / "warchief.db")
 
 
@@ -174,6 +176,7 @@ def _show_questions(project_root: Path) -> None:
 
 def _do_answer(project_root: Path, task_id: str, answer_text: str) -> None:
     import uuid
+
     try:
         store = _get_store(project_root)
         task = store.get_task(task_id)
@@ -188,26 +191,31 @@ def _do_answer(project_root: Path, task_id: str, answer_text: str) -> None:
             return
 
         from warchief.models import MessageRecord, EventRecord
-        store.create_message(MessageRecord(
-            id=f"msg-{uuid.uuid4().hex[:8]}",
-            from_agent="user",
-            to_agent=task_id,
-            message_type="answer",
-            body=answer_text,
-            persistent=True,
-            created_at=time.time(),
-        ))
+
+        store.create_message(
+            MessageRecord(
+                id=f"msg-{uuid.uuid4().hex[:8]}",
+                from_agent="user",
+                to_agent=task_id,
+                message_type="answer",
+                body=answer_text,
+                persistent=True,
+                created_at=time.time(),
+            )
+        )
 
         new_labels = [l for l in task.labels if l != "question"]
         store.update_task(task_id, status="open", labels=new_labels)
 
-        store.log_event(EventRecord(
-            event_type="answer",
-            task_id=task_id,
-            details={"answer": answer_text},
-            actor="user",
-            created_at=time.time(),
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="answer",
+                task_id=task_id,
+                details={"answer": answer_text},
+                actor="user",
+                created_at=time.time(),
+            )
+        )
 
         store.close()
         print(f"Answered {task_id}. Agent will re-spawn with your response.")
@@ -218,34 +226,41 @@ def _do_answer(project_root: Path, task_id: str, answer_text: str) -> None:
 def _do_tell(project_root: Path, task_id: str, message: str) -> None:
     """Store a message for a task. The next agent spawned will see it."""
     import uuid
+
     try:
         store = _get_store(project_root)
         task = store.get_task(task_id)
         if not task:
-            print(f"Task {task_id} not found.")
             store.close()
-            return
+            raise ValueError(f"Task {task_id} not found.")
 
         from warchief.models import MessageRecord, EventRecord
-        store.create_message(MessageRecord(
-            id=f"msg-{uuid.uuid4().hex[:8]}",
-            from_agent="user",
-            to_agent=task_id,
-            message_type="feedback",
-            body=message,
-            persistent=True,
-            created_at=time.time(),
-        ))
-        store.log_event(EventRecord(
-            event_type="user_message",
-            task_id=task_id,
-            details={"message": message},
-            actor="user",
-            created_at=time.time(),
-        ))
+
+        store.create_message(
+            MessageRecord(
+                id=f"msg-{uuid.uuid4().hex[:8]}",
+                from_agent="user",
+                to_agent=task_id,
+                message_type="feedback",
+                body=message,
+                persistent=True,
+                created_at=time.time(),
+            )
+        )
+        store.log_event(
+            EventRecord(
+                event_type="user_message",
+                task_id=task_id,
+                details={"message": message},
+                actor="user",
+                created_at=time.time(),
+            )
+        )
         store.close()
 
-        agent_info = f" (agent {task.assigned_agent} is working on it)" if task.assigned_agent else ""
+        agent_info = (
+            f" (agent {task.assigned_agent} is working on it)" if task.assigned_agent else ""
+        )
         print(f"Message stored for {task_id}{agent_info}.")
         print(f"The next agent spawned for this task will see your message.")
     except Exception as e:
@@ -257,33 +272,37 @@ def _do_nudge(project_root: Path, task_id: str, message: str) -> None:
     import os
     import signal
     import uuid
+
     try:
         store = _get_store(project_root)
         task = store.get_task(task_id)
         if not task:
-            print(f"Task {task_id} not found.")
             store.close()
-            return
+            raise ValueError(f"Task {task_id} not found.")
 
         from warchief.models import MessageRecord, EventRecord
 
         # Store the message
-        store.create_message(MessageRecord(
-            id=f"msg-{uuid.uuid4().hex[:8]}",
-            from_agent="user",
-            to_agent=task_id,
-            message_type="feedback",
-            body=message,
-            persistent=True,
-            created_at=time.time(),
-        ))
-        store.log_event(EventRecord(
-            event_type="nudge",
-            task_id=task_id,
-            details={"message": message},
-            actor="user",
-            created_at=time.time(),
-        ))
+        store.create_message(
+            MessageRecord(
+                id=f"msg-{uuid.uuid4().hex[:8]}",
+                from_agent="user",
+                to_agent=task_id,
+                message_type="feedback",
+                body=message,
+                persistent=True,
+                created_at=time.time(),
+            )
+        )
+        store.log_event(
+            EventRecord(
+                event_type="nudge",
+                task_id=task_id,
+                details={"message": message},
+                actor="user",
+                created_at=time.time(),
+            )
+        )
 
         # Kill the current agent if one is running
         if task.assigned_agent:
@@ -297,8 +316,11 @@ def _do_nudge(project_root: Path, task_id: str, message: str) -> None:
                 store.update_agent(agent.id, status="dead")
 
         # Always send back to development — user is giving new instructions
-        new_labels = [l for l in task.labels
-                      if not l.startswith("stage:") and l not in ("rejected", "question")]
+        new_labels = [
+            l
+            for l in task.labels
+            if not l.startswith("stage:") and l not in ("rejected", "question")
+        ]
         new_labels.append("stage:development")
         store.update_task(
             task_id,
@@ -316,6 +338,7 @@ def _do_nudge(project_root: Path, task_id: str, message: str) -> None:
 
 def _do_retry(project_root: Path, task_id: str, feedback: str) -> None:
     import uuid
+
     try:
         store = _get_store(project_root)
         task = store.get_task(task_id)
@@ -325,31 +348,43 @@ def _do_retry(project_root: Path, task_id: str, feedback: str) -> None:
             return
 
         from warchief.models import MessageRecord, EventRecord
-        new_labels = [l for l in task.labels
-                      if not l.startswith("stage:") and l not in ("rejected", "question")]
+
+        new_labels = [
+            l
+            for l in task.labels
+            if not l.startswith("stage:") and l not in ("rejected", "question")
+        ]
         new_labels.append("stage:development")
 
         store.update_task(
-            task_id, status="open", stage="development",
-            labels=new_labels, assigned_agent=None,
-            spawn_count=0, crash_count=0,
+            task_id,
+            status="open",
+            stage="development",
+            labels=new_labels,
+            assigned_agent=None,
+            spawn_count=0,
+            crash_count=0,
         )
-        store.create_message(MessageRecord(
-            id=f"msg-{uuid.uuid4().hex[:8]}",
-            from_agent="user",
-            to_agent=task_id,
-            message_type="feedback",
-            body=feedback,
-            persistent=True,
-            created_at=time.time(),
-        ))
-        store.log_event(EventRecord(
-            event_type="retry",
-            task_id=task_id,
-            details={"feedback": feedback},
-            actor="user",
-            created_at=time.time(),
-        ))
+        store.create_message(
+            MessageRecord(
+                id=f"msg-{uuid.uuid4().hex[:8]}",
+                from_agent="user",
+                to_agent=task_id,
+                message_type="feedback",
+                body=feedback,
+                persistent=True,
+                created_at=time.time(),
+            )
+        )
+        store.log_event(
+            EventRecord(
+                event_type="retry",
+                task_id=task_id,
+                details={"feedback": feedback},
+                actor="user",
+                created_at=time.time(),
+            )
+        )
         store.close()
         print(f"Task {task_id} reopened with feedback. Agent will re-spawn.")
     except Exception as e:
@@ -372,7 +407,7 @@ def _show_testing(project_root: Path) -> None:
         for t in tasks:
             print(f'  {t.id} "{t.title}"')
             print(f"    Run Playwright tests, then:")
-            print(f'    -> approve {t.id}')
+            print(f"    -> approve {t.id}")
             print(f'    -> reject {t.id} "feedback"')
             print()
     except Exception as e:
@@ -395,17 +430,20 @@ def _do_approve(project_root: Path, task_id: str) -> None:
             return
 
         from warchief.models import EventRecord
+
         # Remove needs-testing label — state machine will advance to pr-creation
         new_labels = [l for l in task.labels if l != "needs-testing"]
         store.update_task(task_id, status="open", labels=new_labels)
 
-        store.log_event(EventRecord(
-            event_type="testing_approved",
-            task_id=task_id,
-            details={"approved_by": "user"},
-            actor="user",
-            created_at=time.time(),
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="testing_approved",
+                task_id=task_id,
+                details={"approved_by": "user"},
+                actor="user",
+                created_at=time.time(),
+            )
+        )
 
         store.close()
         print(f"Approved {task_id}. Task will proceed to PR creation.")
@@ -416,6 +454,7 @@ def _do_approve(project_root: Path, task_id: str) -> None:
 def _do_reject(project_root: Path, task_id: str, feedback: str) -> None:
     """Reject a task after manual testing — sends back to development."""
     import uuid
+
     try:
         store = _get_store(project_root)
         task = store.get_task(task_id)
@@ -432,33 +471,39 @@ def _do_reject(project_root: Path, task_id: str, feedback: str) -> None:
         from warchief.models import MessageRecord, EventRecord
 
         # Remove needs-testing and stage labels, add rejected, send back to development
-        new_labels = [l for l in task.labels
-                      if l != "needs-testing" and not l.startswith("stage:")]
+        new_labels = [l for l in task.labels if l != "needs-testing" and not l.startswith("stage:")]
         new_labels.append("stage:development")
 
         store.update_task(
-            task_id, status="open", stage="development",
-            labels=new_labels, assigned_agent=None,
+            task_id,
+            status="open",
+            stage="development",
+            labels=new_labels,
+            assigned_agent=None,
         )
 
         # Store feedback message so the developer agent sees it
-        store.create_message(MessageRecord(
-            id=f"msg-{uuid.uuid4().hex[:8]}",
-            from_agent="user",
-            to_agent=task_id,
-            message_type="feedback",
-            body=f"[Testing rejected] {feedback}",
-            persistent=True,
-            created_at=time.time(),
-        ))
+        store.create_message(
+            MessageRecord(
+                id=f"msg-{uuid.uuid4().hex[:8]}",
+                from_agent="user",
+                to_agent=task_id,
+                message_type="feedback",
+                body=f"[Testing rejected] {feedback}",
+                persistent=True,
+                created_at=time.time(),
+            )
+        )
 
-        store.log_event(EventRecord(
-            event_type="testing_rejected",
-            task_id=task_id,
-            details={"feedback": feedback},
-            actor="user",
-            created_at=time.time(),
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="testing_rejected",
+                task_id=task_id,
+                details={"feedback": feedback},
+                actor="user",
+                created_at=time.time(),
+            )
+        )
 
         store.close()
         print(f"Rejected {task_id}. Task sent back to development with your feedback.")
@@ -511,6 +556,7 @@ def _show_agents(project_root: Path) -> None:
 def _show_costs(project_root: Path) -> None:
     try:
         from warchief.cost_tracker import compute_cost_summary
+
         summary = compute_cost_summary(project_root)
         if not summary.entries:
             print("No cost data yet.")

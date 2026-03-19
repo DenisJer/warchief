@@ -1,4 +1,5 @@
 """Tests for doctor health checks."""
+
 from __future__ import annotations
 
 import os
@@ -111,10 +112,14 @@ class TestOrphanedTasks:
         assert result.ok is True
 
     def test_with_orphan(self, store: TaskStore):
-        store.create_task(TaskRecord(
-            id="wc-orph", title="Orphan",
-            status="in_progress", assigned_agent="ghost-agent",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-orph",
+                title="Orphan",
+                status="in_progress",
+                assigned_agent="ghost-agent",
+            )
+        )
         result = check_orphaned_tasks(store)
         assert result.ok is False
         assert "wc-orph" in result.message
@@ -134,19 +139,23 @@ class TestLogFile:
 
 class TestHealthReport:
     def test_healthy_report(self):
-        report = HealthReport(checks=[
-            CheckResult("test1", True, "ok"),
-            CheckResult("test2", True, "ok"),
-        ])
+        report = HealthReport(
+            checks=[
+                CheckResult("test1", True, "ok"),
+                CheckResult("test2", True, "ok"),
+            ]
+        )
         assert report.healthy is True
         assert report.error_count == 0
 
     def test_unhealthy_report(self):
-        report = HealthReport(checks=[
-            CheckResult("test1", True, "ok"),
-            CheckResult("test2", False, "bad", "error"),
-            CheckResult("test3", False, "meh", "warning"),
-        ])
+        report = HealthReport(
+            checks=[
+                CheckResult("test1", True, "ok"),
+                CheckResult("test2", False, "bad", "error"),
+                CheckResult("test3", False, "meh", "warning"),
+            ]
+        )
         assert report.healthy is False
         assert report.error_count == 1
         assert report.warning_count == 1
@@ -154,17 +163,21 @@ class TestHealthReport:
 
 class TestFormatReport:
     def test_format_healthy(self):
-        report = HealthReport(checks=[
-            CheckResult("db", True, "Database OK"),
-        ])
+        report = HealthReport(
+            checks=[
+                CheckResult("db", True, "Database OK"),
+            ]
+        )
         output = format_report(report)
         assert "PASS" in output
         assert "healthy" in output.lower()
 
     def test_format_unhealthy(self):
-        report = HealthReport(checks=[
-            CheckResult("db", False, "Corrupt", "error"),
-        ])
+        report = HealthReport(
+            checks=[
+                CheckResult("db", False, "Corrupt", "error"),
+            ]
+        )
         output = format_report(report)
         assert "FAIL" in output
         assert "error" in output.lower()
@@ -172,7 +185,9 @@ class TestFormatReport:
 
 class TestClaudeCli:
     def test_claude_found(self, monkeypatch):
-        monkeypatch.setattr("shutil.which", lambda cmd: "/usr/local/bin/claude" if cmd == "claude" else None)
+        monkeypatch.setattr(
+            "shutil.which", lambda cmd: "/usr/local/bin/claude" if cmd == "claude" else None
+        )
         monkeypatch.setattr(
             "warchief.doctor.subprocess.run",
             lambda *a, **kw: type("R", (), {"stdout": "claude 1.0.0\n", "stderr": ""})(),
@@ -192,11 +207,20 @@ class TestGit:
     def test_git_ok(self, tmp_path: Path):
         """Test on a real temporary git repo."""
         import subprocess
+
         subprocess.run(["git", "init", str(tmp_path)], capture_output=True)
-        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"],
-                       cwd=tmp_path, capture_output=True,
-                       env={**os.environ, "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@t",
-                            "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t"})
+        subprocess.run(
+            ["git", "commit", "--allow-empty", "-m", "init"],
+            cwd=tmp_path,
+            capture_output=True,
+            env={
+                **os.environ,
+                "GIT_AUTHOR_NAME": "test",
+                "GIT_AUTHOR_EMAIL": "t@t",
+                "GIT_COMMITTER_NAME": "test",
+                "GIT_COMMITTER_EMAIL": "t@t",
+            },
+        )
         result = check_git(tmp_path)
         assert result.ok is True
 
@@ -215,9 +239,14 @@ class TestGitUser:
     def test_local_config(self, tmp_path: Path):
         """Test repo with local git user config."""
         import subprocess
+
         subprocess.run(["git", "init", str(tmp_path)], capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test User"], cwd=tmp_path, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.name", "Test User"], cwd=tmp_path, capture_output=True
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.com"], cwd=tmp_path, capture_output=True
+        )
         result = check_git_user(tmp_path)
         assert result.ok is True
         assert "local" in result.message
@@ -226,6 +255,7 @@ class TestGitUser:
     def test_no_config(self, tmp_path: Path, monkeypatch):
         """Test with no git user config at all."""
         import subprocess
+
         subprocess.run(["git", "init", str(tmp_path)], capture_output=True)
         # Override HOME to prevent global config from leaking in
         monkeypatch.setenv("HOME", str(tmp_path))

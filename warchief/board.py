@@ -1,4 +1,5 @@
 """Kanban board — terminal display of pipeline state."""
+
 from __future__ import annotations
 
 import time
@@ -61,7 +62,9 @@ def _render_plain_board(store: TaskStore) -> str:
             agent_str = f" -> {agent.id}" if agent else ""
             age = format_duration(time.time() - t.updated_at) if t.updated_at else ""
             status_icon = _status_icon(t.status)
-            lines.append(f"    {status_icon} {t.id}  {t.title[:30]}  [{t.status}]{agent_str}  {age}")
+            lines.append(
+                f"    {status_icon} {t.id}  {t.title[:30]}  [{t.status}]{agent_str}  {age}"
+            )
 
     # Completed
     closed = [t for t in tasks if t.status == "closed"]

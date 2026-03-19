@@ -1,4 +1,5 @@
 """Tests for observability metrics."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -54,13 +55,22 @@ class TestCollectMetrics:
         assert metric_map["warchief_tasks_closed"].value == 1
 
     def test_stage_metrics(self, store: TaskStore):
-        store.create_task(TaskRecord(
-            id="wc-s1", title="In dev", status="in_progress", stage="development",
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-s1",
+                title="In dev",
+                status="in_progress",
+                stage="development",
+            )
+        )
         metrics = collect_metrics(store)
-        stage_metrics = [m for m in metrics
-                         if m.name == "warchief_tasks_by_stage"
-                         and m.labels and m.labels.get("stage") == "development"]
+        stage_metrics = [
+            m
+            for m in metrics
+            if m.name == "warchief_tasks_by_stage"
+            and m.labels
+            and m.labels.get("stage") == "development"
+        ]
         assert len(stage_metrics) == 1
         assert stage_metrics[0].value == 1
 

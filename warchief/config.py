@@ -13,9 +13,18 @@ except ImportError:
 
 # --- Stage / Status Constants ---
 
-STAGES = ["investigation", "planning", "development", "testing", "reviewing", "security-review", "pr-creation"]
+# Hardcoded fallbacks — used when pipeline TOML files are not found
+_DEFAULT_STAGES = [
+    "investigation",
+    "planning",
+    "development",
+    "testing",
+    "reviewing",
+    "security-review",
+    "pr-creation",
+]
 
-STAGE_TO_ROLE: dict[str, str] = {
+_DEFAULT_STAGE_TO_ROLE: dict[str, str] = {
     "planning": "planner",
     "development": "developer",
     "reviewing": "reviewer",
@@ -27,38 +36,143 @@ STAGE_TO_ROLE: dict[str, str] = {
 
 # Pipeline sequences per task type
 # Testing before reviewing — reviewer sees code + tests together
-PIPELINE_FEATURE = ["planning", "development", "testing", "reviewing", "security-review", "pr-creation"]
-PIPELINE_BUG = ["development", "testing", "reviewing", "pr-creation"]
-PIPELINE_INVESTIGATION = ["investigation"]
+_DEFAULT_PIPELINE_FEATURE = [
+    "planning",
+    "development",
+    "testing",
+    "reviewing",
+    "security-review",
+    "pr-creation",
+]
+_DEFAULT_PIPELINE_BUG = ["development", "testing", "reviewing", "pr-creation"]
+_DEFAULT_PIPELINE_INVESTIGATION = ["investigation"]
 
-TYPE_TO_PIPELINE: dict[str, list[str]] = {
-    "feature": PIPELINE_FEATURE,
-    "bug": PIPELINE_BUG,
-    "investigation": PIPELINE_INVESTIGATION,
+_DEFAULT_TYPE_TO_PIPELINE: dict[str, list[str]] = {
+    "feature": _DEFAULT_PIPELINE_FEATURE,
+    "bug": _DEFAULT_PIPELINE_BUG,
+    "investigation": _DEFAULT_PIPELINE_INVESTIGATION,
 }
+
+
+def _load_pipeline_definitions() -> tuple[dict[str, str], dict[str, list[str]], list[str]]:
+    """Load pipeline definitions from pipelines/*.toml files.
+
+    Returns (stage_to_role, type_to_pipeline, all_stages).
+    Falls back to hardcoded values if no TOML files found.
+    """
+    pipelines_dir = Path(__file__).parent.parent / "pipelines"
+    if not pipelines_dir.exists():
+        return (
+            _DEFAULT_STAGE_TO_ROLE,
+            _DEFAULT_TYPE_TO_PIPELINE,
+            _DEFAULT_STAGES,
+        )
+
+    stage_to_role: dict[str, str] = {}
+    type_to_pipeline: dict[str, list[str]] = {}
+    all_stages_set: set[str] = set()
+    # Track which stages each file uses in its pipelines (for role priority)
+    pipeline_stages_by_file: list[tuple[dict[str, str], set[str]]] = []
+
+    for toml_path in sorted(pipelines_dir.glob("*.toml")):
+        with open(toml_path, "rb") as f:
+            data = tomllib.load(f)
+
+        # Extract stage->role mappings from this file
+        file_stage_roles: dict[str, str] = {}
+        stages = data.get("stages", {})
+        for stage_name, stage_info in stages.items():
+            if isinstance(stage_info, dict) and "role" in stage_info:
+                file_stage_roles[stage_name] = stage_info["role"]
+                all_stages_set.add(stage_name)
+
+        # Extract pipeline sequences
+        file_pipeline_stages: set[str] = set()
+        pipelines = data.get("pipelines", {})
+        for pipeline_name, sequence in pipelines.items():
+            if isinstance(sequence, list):
+                type_to_pipeline[pipeline_name] = sequence
+                file_pipeline_stages.update(sequence)
+
+        pipeline_stages_by_file.append((file_stage_roles, file_pipeline_stages))
+
+    if not all_stages_set:
+        return (_DEFAULT_STAGE_TO_ROLE, _DEFAULT_TYPE_TO_PIPELINE, _DEFAULT_STAGES)
+
+    # Build stage_to_role: stages used in a file's pipelines get priority (first file wins)
+    for file_roles, file_pipeline_stages in pipeline_stages_by_file:
+        for stage_name, role in file_roles.items():
+            if stage_name in file_pipeline_stages and stage_name not in stage_to_role:
+                stage_to_role[stage_name] = role
+    # Then add remaining stages (not in any pipeline) — first definition wins
+    for file_roles, _ in pipeline_stages_by_file:
+        for stage_name, role in file_roles.items():
+            if stage_name not in stage_to_role:
+                stage_to_role[stage_name] = role
+
+    # Build ordered stages list from _DEFAULT_STAGES order, then append extras
+    all_stages = [s for s in _DEFAULT_STAGES if s in all_stages_set]
+    for s in all_stages_set:
+        if s not in all_stages:
+            all_stages.append(s)
+
+    return stage_to_role, type_to_pipeline, all_stages
+
+
+# Load from TOML files (falls back to defaults above)
+STAGE_TO_ROLE, TYPE_TO_PIPELINE, STAGES = _load_pipeline_definitions()
+
+# Keep individual pipeline constants for backward compat (derived from loaded data)
+PIPELINE_FEATURE = TYPE_TO_PIPELINE.get("feature", _DEFAULT_PIPELINE_FEATURE)
+PIPELINE_BUG = TYPE_TO_PIPELINE.get("bug", _DEFAULT_PIPELINE_BUG)
+PIPELINE_INVESTIGATION = TYPE_TO_PIPELINE.get("investigation", _DEFAULT_PIPELINE_INVESTIGATION)
 
 # File extensions that indicate front-end changes (triggers e2e tests)
 FRONTEND_EXTENSIONS = {
-    ".html", ".css", ".scss", ".sass", ".less",
-    ".js", ".jsx", ".ts", ".tsx",
-    ".vue", ".svelte",
+    ".html",
+    ".css",
+    ".scss",
+    ".sass",
+    ".less",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".vue",
+    ".svelte",
 }
 
 STATUSES = ["open", "in_progress", "blocked", "closed"]
 
-SPECIAL_LABELS = ["rejected", "waiting", "security", "frontend", "question", "needs-testing", "needs-plan-approval", "needs-review", "budget-exceeded", "group-dev-done", "group-waiting"]
+SPECIAL_LABELS = [
+    "rejected",
+    "waiting",
+    "security",
+    "frontend",
+    "question",
+    "needs-testing",
+    "needs-plan-approval",
+    "needs-review",
+    "budget-exceeded",
+    "group-dev-done",
+    "group-waiting",
+]
 
 # --- Tuning Constants (defaults, overridable in config.toml) ---
+
 
 def detect_default_branch(project_root: "Path | None" = None) -> str:
     """Detect the default branch (main or master) for a git repo."""
     import subprocess
+
     cwd = str(project_root) if project_root else None
     for branch in ("main", "master"):
         try:
             subprocess.run(
                 ["git", "show-ref", "--verify", f"refs/heads/{branch}"],
-                cwd=cwd, check=True, capture_output=True,
+                cwd=cwd,
+                check=True,
+                capture_output=True,
             )
             return branch
         except (subprocess.CalledProcessError, OSError):
@@ -68,7 +182,9 @@ def detect_default_branch(project_root: "Path | None" = None) -> str:
         try:
             subprocess.run(
                 ["git", "show-ref", "--verify", f"refs/remotes/origin/{branch}"],
-                cwd=cwd, check=True, capture_output=True,
+                cwd=cwd,
+                check=True,
+                capture_output=True,
             )
             return branch
         except (subprocess.CalledProcessError, OSError):
@@ -94,18 +210,20 @@ MAX_AUTO_RETRIES = 2  # Max times watcher auto-unblocks a task before requiring 
 @dataclass
 class TestingConfig:
     """Project-level test commands. Warchief runs these at the testing stage."""
-    test_command: str = ""       # Unit/integration tests (e.g., "pytest", "npm test")
-    e2e_command: str = ""        # E2E/Playwright tests (e.g., "npx playwright test")
-    test_timeout: int = 300      # Max seconds for test commands
-    auto_run: bool = True        # Automatically run tests (False = manual approve/reject)
+
+    test_command: str = ""  # Unit/integration tests (e.g., "pytest", "npm test")
+    e2e_command: str = ""  # E2E/Playwright tests (e.g., "npx playwright test")
+    test_timeout: int = 300  # Max seconds for test commands
+    auto_run: bool = True  # Automatically run tests (False = manual approve/reject)
 
 
 @dataclass
 class BudgetConfig:
     """Cost budget limits. Pipeline pauses or tasks block when exceeded."""
-    session_limit: float = 10.0     # Pauses entire pipeline at this cost
-    per_task_default: float = 2.0   # Default per-task budget (override with --budget)
-    warn_at_percent: int = 80       # Log warning at this % of budget
+
+    session_limit: float = 10.0  # Pauses entire pipeline at this cost
+    per_task_default: float = 2.0  # Default per-task budget (override with --budget)
+    warn_at_percent: int = 80  # Log warning at this % of budget
 
 
 @dataclass
@@ -136,9 +254,14 @@ def read_config(project_root: Path) -> Config:
         data = tomllib.load(f)
     cfg = Config()
     for key in (
-        "max_total_agents", "base_branch", "use_tmux_windows",
-        "agent_timeout", "notify_conductor", "paused",
-        "docs_path", "project_type",
+        "max_total_agents",
+        "base_branch",
+        "use_tmux_windows",
+        "agent_timeout",
+        "notify_conductor",
+        "paused",
+        "docs_path",
+        "project_type",
     ):
         if key in data:
             setattr(cfg, key, data[key])
@@ -170,12 +293,12 @@ def write_config(project_root: Path, config: Config) -> None:
     config_path = config_dir / "config.toml"
 
     lines = [
-        f'max_total_agents = {config.max_total_agents}',
+        f"max_total_agents = {config.max_total_agents}",
         f'base_branch = "{config.base_branch}"',
-        f'use_tmux_windows = {"true" if config.use_tmux_windows else "false"}',
-        f'agent_timeout = {config.agent_timeout}',
-        f'notify_conductor = {"true" if config.notify_conductor else "false"}',
-        f'paused = {"true" if config.paused else "false"}',
+        f"use_tmux_windows = {'true' if config.use_tmux_windows else 'false'}",
+        f"agent_timeout = {config.agent_timeout}",
+        f"notify_conductor = {'true' if config.notify_conductor else 'false'}",
+        f"paused = {'true' if config.paused else 'false'}",
         f'docs_path = "{config.docs_path}"',
         f'project_type = "{config.project_type}"',
     ]
@@ -190,7 +313,7 @@ def write_config(project_root: Path, config: Config) -> None:
         lines.append("")
         lines.append("[max_role_agents]")
         for role, count in config.max_role_agents.items():
-            lines.append(f'{role} = {count}')
+            lines.append(f"{role} = {count}")
 
     if config.testing.test_command or config.testing.e2e_command:
         lines.append("")
@@ -199,15 +322,15 @@ def write_config(project_root: Path, config: Config) -> None:
             lines.append(f'test_command = "{config.testing.test_command}"')
         if config.testing.e2e_command:
             lines.append(f'e2e_command = "{config.testing.e2e_command}"')
-        lines.append(f'test_timeout = {config.testing.test_timeout}')
-        lines.append(f'auto_run = {"true" if config.testing.auto_run else "false"}')
+        lines.append(f"test_timeout = {config.testing.test_timeout}")
+        lines.append(f"auto_run = {'true' if config.testing.auto_run else 'false'}")
 
     if config.budget.session_limit or config.budget.per_task_default:
         lines.append("")
         lines.append("[budget]")
-        lines.append(f'session_limit = {config.budget.session_limit}')
-        lines.append(f'per_task_default = {config.budget.per_task_default}')
-        lines.append(f'warn_at_percent = {config.budget.warn_at_percent}')
+        lines.append(f"session_limit = {config.budget.session_limit}")
+        lines.append(f"per_task_default = {config.budget.per_task_default}")
+        lines.append(f"warn_at_percent = {config.budget.warn_at_percent}")
 
     content = "\n".join(lines) + "\n"
 
@@ -217,7 +340,10 @@ def write_config(project_root: Path, config: Config) -> None:
         os.close(fd)
         os.replace(tmp_path, config_path)
     except BaseException:
-        os.close(fd) if not os.get_inheritable(fd) else None
+        try:
+            os.close(fd)
+        except OSError:
+            pass  # fd already closed
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
         raise

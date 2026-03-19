@@ -1,4 +1,5 @@
 """Tests for hook installation."""
+
 from __future__ import annotations
 
 import json
@@ -18,6 +19,7 @@ class TestHookInstallation:
 
     def test_script_is_executable(self, tmp_path: Path):
         import os
+
         install_agent_hooks(tmp_path, "dev-thrall", "wc-001", "developer", "/tmp/db")
 
         hook = tmp_path / ".claude" / "hooks" / "verify_task_updated.py"

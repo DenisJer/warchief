@@ -1,4 +1,5 @@
 """Tests for preflight checks."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -53,14 +54,18 @@ class TestCheckGitUser:
     def test_user_configured(self, tmp_path: Path):
         """Test with a repo that has local git config."""
         import subprocess
+
         subprocess.run(["git", "init", str(tmp_path)], capture_output=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "t@t.com"], cwd=tmp_path, capture_output=True
+        )
         assert check_git_user(tmp_path) is None
 
     def test_user_not_configured(self, tmp_path: Path, monkeypatch):
         """Test with bare repo and no global fallback."""
         import subprocess
+
         subprocess.run(["git", "init", str(tmp_path)], capture_output=True)
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "nonexistent"))
@@ -90,16 +95,22 @@ class TestCheckSlotAvailable:
 
     def test_total_limit_reached(self, store: TaskStore, config: Config, registry: RoleRegistry):
         from warchief.models import AgentRecord
+
         for i in range(4):
-            store.register_agent(AgentRecord(
-                id=f"dev-{i}", role="developer", status="alive",
-            ))
+            store.register_agent(
+                AgentRecord(
+                    id=f"dev-{i}",
+                    role="developer",
+                    status="alive",
+                )
+            )
         err = check_slot_available(store, "developer", config, registry)
         assert err is not None
         assert "Total agent limit" in err
 
     def test_role_limit_reached(self, store: TaskStore, registry: RoleRegistry):
         from warchief.models import AgentRecord
+
         config = Config(max_total_agents=100)
         # Conductor max_concurrent = 1
         store.register_agent(AgentRecord(id="cond-1", role="conductor", status="alive"))
@@ -136,7 +147,15 @@ class TestRunPreflight:
     @patch("warchief.preflight.check_base_branch", return_value=None)
     @patch("warchief.preflight.check_claude_available", return_value=None)
     @patch("warchief.preflight.check_git_user", return_value=None)
-    def test_all_pass(self, mock_git, mock_claude, mock_branch, store: TaskStore, config: Config, registry: RoleRegistry):
+    def test_all_pass(
+        self,
+        mock_git,
+        mock_claude,
+        mock_branch,
+        store: TaskStore,
+        config: Config,
+        registry: RoleRegistry,
+    ):
         task = TaskRecord(id="wc-01", title="Build login", base_branch="main")
         errors = run_preflight(task, "developer", Path("/tmp"), store, config, registry)
         assert errors == []
@@ -144,14 +163,24 @@ class TestRunPreflight:
     @patch("warchief.preflight.check_base_branch", return_value="Branch not found")
     @patch("warchief.preflight.check_claude_available", return_value=None)
     @patch("warchief.preflight.check_git_user", return_value=None)
-    def test_branch_failure(self, mock_git, mock_claude, mock_branch, store: TaskStore, config: Config, registry: RoleRegistry):
+    def test_branch_failure(
+        self,
+        mock_git,
+        mock_claude,
+        mock_branch,
+        store: TaskStore,
+        config: Config,
+        registry: RoleRegistry,
+    ):
         task = TaskRecord(id="wc-01", title="Build login")
         errors = run_preflight(task, "developer", Path("/tmp"), store, config, registry)
         assert len(errors) >= 1
         assert any("Branch" in e for e in errors)
 
     @patch("warchief.preflight.check_claude_available", return_value="Claude CLI not found")
-    def test_claude_missing_short_circuits(self, mock_claude, store: TaskStore, config: Config, registry: RoleRegistry):
+    def test_claude_missing_short_circuits(
+        self, mock_claude, store: TaskStore, config: Config, registry: RoleRegistry
+    ):
         task = TaskRecord(id="wc-01", title="Build login")
         errors = run_preflight(task, "developer", Path("/tmp"), store, config, registry)
         assert len(errors) == 1

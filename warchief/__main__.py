@@ -71,8 +71,7 @@ def _ensure_initialized() -> None:
     root = _warchief_root()
     if not root.exists() or not _db_path().exists():
         print(
-            "Error: Warchief is not initialized in this directory.\n"
-            "Run 'warchief init' first.",
+            "Error: Warchief is not initialized in this directory.\nRun 'warchief init' first.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -87,24 +86,29 @@ def _generate_task_id() -> str:
 # exist yet but the user is only running e.g. ``warchief version``.
 # ---------------------------------------------------------------------------
 
+
 def _get_store():
     """Return an opened TaskStore pointing at the project DB."""
     from warchief.task_store import TaskStore  # noqa: WPS433
+
     return TaskStore(_db_path())
 
 
 def _task_record(**kwargs):
     from warchief.models import TaskRecord  # noqa: WPS433
+
     return TaskRecord(**kwargs)
 
 
 def _event_record(**kwargs):
     from warchief.models import EventRecord  # noqa: WPS433
+
     return EventRecord(**kwargs)
 
 
 def _message_record(**kwargs):
     from warchief.models import MessageRecord  # noqa: WPS433
+
     return MessageRecord(**kwargs)
 
 
@@ -143,6 +147,7 @@ def _ensure_gitignore(project_root: Path) -> None:
 # Command handlers
 # ---------------------------------------------------------------------------
 
+
 def cmd_version(_args: argparse.Namespace) -> None:
     print(f"warchief {__version__}")
 
@@ -158,6 +163,7 @@ def cmd_init(_args: argparse.Namespace) -> None:
 
     # Create SQLite DB via TaskStore (it will create tables on first open)
     from warchief.task_store import TaskStore  # noqa: WPS433
+
     store = TaskStore(_db_path())
     store.close()
 
@@ -284,21 +290,11 @@ def cmd_list(args: argparse.Namespace) -> None:
 
     # Table header
     id_w, status_w, stage_w = 12, 10, 18
-    header = (
-        f"{'ID':<{id_w}}"
-        f"{'Status':<{status_w}}"
-        f"{'Stage':<{stage_w}}"
-        f"Title"
-    )
+    header = f"{'ID':<{id_w}}{'Status':<{status_w}}{'Stage':<{stage_w}}Title"
     print(header)
     for task in tasks:
         stage = task.stage if task.stage else "\u2014"
-        row = (
-            f"{task.id:<{id_w}}"
-            f"{task.status:<{status_w}}"
-            f"{stage:<{stage_w}}"
-            f"{task.title}"
-        )
+        row = f"{task.id:<{id_w}}{task.status:<{status_w}}{stage:<{stage_w}}{task.title}"
         print(row)
 
 
@@ -347,6 +343,7 @@ def cmd_tell(args: argparse.Namespace) -> None:
     """Send a message to a task. The next agent spawned will see it."""
     _ensure_initialized()
     from warchief.control import _do_tell
+
     _do_tell(Path.cwd(), args.task_id, args.message)
 
 
@@ -354,6 +351,7 @@ def cmd_nudge(args: argparse.Namespace) -> None:
     """Send a message and restart the agent so it sees it immediately."""
     _ensure_initialized()
     from warchief.control import _do_nudge
+
     _do_nudge(Path.cwd(), args.task_id, args.message)
 
 
@@ -361,6 +359,7 @@ def cmd_approve(args: argparse.Namespace) -> None:
     """Approve a task after manual Playwright testing."""
     _ensure_initialized()
     from warchief.control import _do_approve
+
     _do_approve(Path.cwd(), args.task_id)
 
 
@@ -368,6 +367,7 @@ def cmd_reject(args: argparse.Namespace) -> None:
     """Reject a task after manual testing — sends back to development."""
     _ensure_initialized()
     from warchief.control import _do_reject
+
     _do_reject(Path.cwd(), args.task_id, args.feedback)
 
 
@@ -382,8 +382,9 @@ def cmd_retry(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     # Reset task to development with clean counters
-    new_labels = [l for l in task.labels
-                  if not l.startswith("stage:") and l not in ("rejected", "question")]
+    new_labels = [
+        l for l in task.labels if not l.startswith("stage:") and l not in ("rejected", "question")
+    ]
     new_labels.append("stage:development")
 
     store.update_task(
@@ -400,6 +401,7 @@ def cmd_retry(args: argparse.Namespace) -> None:
     feedback = args.feedback
     if feedback:
         import uuid as _uuid
+
         msg = _message_record(
             id=f"msg-{_uuid.uuid4().hex[:8]}",
             from_agent="user",
@@ -412,13 +414,15 @@ def cmd_retry(args: argparse.Namespace) -> None:
         store.create_message(msg)
 
     # Log the retry event
-    store.log_event(_event_record(
-        event_type="retry",
-        task_id=args.task_id,
-        details={"feedback": feedback or "", "previous_stage": task.stage or ""},
-        actor="cli",
-        created_at=time.time(),
-    ))
+    store.log_event(
+        _event_record(
+            event_type="retry",
+            task_id=args.task_id,
+            details={"feedback": feedback or "", "previous_stage": task.stage or ""},
+            actor="cli",
+            created_at=time.time(),
+        )
+    )
 
     store.close()
     print(f"Task {args.task_id} reopened in development.")
@@ -523,6 +527,7 @@ def cmd_watch(args: argparse.Namespace) -> None:
 def cmd_stop(_args: argparse.Namespace) -> None:
     _ensure_initialized()
     import signal
+
     lock_path = _warchief_root() / "watcher.lock"
     if not lock_path.exists():
         print("No watcher running.")
@@ -538,6 +543,7 @@ def cmd_stop(_args: argparse.Namespace) -> None:
 def cmd_pause(_args: argparse.Namespace) -> None:
     _ensure_initialized()
     from warchief.config import Config, read_config, write_config
+
     project_root = Path.cwd()
     config = read_config(project_root)
     config.paused = True
@@ -548,6 +554,7 @@ def cmd_pause(_args: argparse.Namespace) -> None:
 def cmd_resume(_args: argparse.Namespace) -> None:
     _ensure_initialized()
     from warchief.config import Config, read_config, write_config
+
     project_root = Path.cwd()
     config = read_config(project_root)
     config.paused = False
@@ -567,7 +574,9 @@ def cmd_status(_args: argparse.Namespace) -> None:
     blocked = sum(1 for t in tasks if t.status == "blocked")
     closed = sum(1 for t in tasks if t.status == "closed")
 
-    print(f"Tasks:  {len(tasks)} total | {open_count} open | {in_progress} in progress | {blocked} blocked | {closed} closed")
+    print(
+        f"Tasks:  {len(tasks)} total | {open_count} open | {in_progress} in progress | {blocked} blocked | {closed} closed"
+    )
     print(f"Agents: {len(running)} running")
     if running:
         for a in running:
@@ -583,6 +592,7 @@ def cmd_status(_args: argparse.Namespace) -> None:
 def cmd_kill_agent(args: argparse.Namespace) -> None:
     _ensure_initialized()
     import signal as sig
+
     store = _get_store()
     agent = store.get_agent(args.name)
     if agent is None:
@@ -613,8 +623,10 @@ def cmd_start(args: argparse.Namespace) -> None:
     no_tmux = getattr(args, "no_tmux", False)
     if not no_tmux:
         from warchief.tmux_ui import is_tmux_available, is_in_tmux
+
         if is_tmux_available() and not is_in_tmux():
             from warchief.tmux_ui import launch_ui
+
             # Do the conductor/task setup first, then launch tmux with just the watcher
             _start_setup_tasks(args)
             launch_ui(Path.cwd())
@@ -658,6 +670,7 @@ def _start_setup_tasks(args: argparse.Namespace) -> None:
 
     install_hooks(project_root)
     from warchief.config import detect_default_branch
+
     base = config.base_branch or detect_default_branch(project_root)
 
     # If a requirement is given, run conductor to decompose it
@@ -677,18 +690,30 @@ def _start_setup_tasks(args: argparse.Namespace) -> None:
             task_id = _generate_task_id()
             now = time.time()
             record = _task_record(
-                id=task_id, title=requirement,
+                id=task_id,
+                title=requirement,
                 description=requirement,
-                status="open", stage=None, labels=[],
-                deps=[], assigned_agent=None, base_branch=base,
-                rejection_count=0, spawn_count=0, crash_count=0,
-                priority=5, type="feature",
-                created_at=now, updated_at=now, closed_at=None, version=0,
+                status="open",
+                stage=None,
+                labels=[],
+                deps=[],
+                assigned_agent=None,
+                base_branch=base,
+                rejection_count=0,
+                spawn_count=0,
+                crash_count=0,
+                priority=5,
+                type="feature",
+                created_at=now,
+                updated_at=now,
+                closed_at=None,
+                version=0,
             )
             store.create_task(record)
             print(f"Created task {task_id}: {requirement}")
         else:
             from warchief.conductor import run_conductor
+
             print(f"Requirement: {requirement}")
             print()
             created = run_conductor(
@@ -704,13 +729,24 @@ def _start_setup_tasks(args: argparse.Namespace) -> None:
                 task_id = _generate_task_id()
                 now = time.time()
                 record = _task_record(
-                    id=task_id, title=requirement,
+                    id=task_id,
+                    title=requirement,
                     description=requirement,
-                    status="open", stage=None, labels=[],
-                    deps=[], assigned_agent=None, base_branch=base,
-                    rejection_count=0, spawn_count=0, crash_count=0,
-                    priority=5, type="feature",
-                    created_at=now, updated_at=now, closed_at=None, version=0,
+                    status="open",
+                    stage=None,
+                    labels=[],
+                    deps=[],
+                    assigned_agent=None,
+                    base_branch=base,
+                    rejection_count=0,
+                    spawn_count=0,
+                    crash_count=0,
+                    priority=5,
+                    type="feature",
+                    created_at=now,
+                    updated_at=now,
+                    closed_at=None,
+                    version=0,
                 )
                 store.create_task(record)
                 print(f"Created task {task_id}: {requirement}")
@@ -731,6 +767,7 @@ def _start_setup_tasks(args: argparse.Namespace) -> None:
 def cmd_board(_args: argparse.Namespace) -> None:
     _ensure_initialized()
     from warchief.board import render_board
+
     store = _get_store()
     output = render_board(store)
     store.close()
@@ -740,6 +777,7 @@ def cmd_board(_args: argparse.Namespace) -> None:
 def cmd_metrics(_args: argparse.Namespace) -> None:
     _ensure_initialized()
     from warchief.metrics import compute_pipeline_metrics, format_duration
+
     store = _get_store()
     m = compute_pipeline_metrics(store)
     store.close()
@@ -761,8 +799,10 @@ def cmd_metrics(_args: argparse.Namespace) -> None:
         print(f"\nPer-Stage Breakdown")
         print(f"{'-' * 50}")
         for sm in m.stage_metrics:
-            print(f"  {sm.stage}: {sm.total_tasks} tasks, "
-                  f"{sm.rejection_count} rejections, {sm.crash_count} crashes")
+            print(
+                f"  {sm.stage}: {sm.total_tasks} tasks, "
+                f"{sm.rejection_count} rejections, {sm.crash_count} crashes"
+            )
 
 
 def cmd_logs(args: argparse.Namespace) -> None:
@@ -773,6 +813,7 @@ def cmd_logs(args: argparse.Namespace) -> None:
     if args.events:
         # Show event-based logs (old behavior)
         from warchief.diagnostics import get_agent_log
+
         store = _get_store()
         entries = get_agent_log(store, agent_name, limit=50)
         store.close()
@@ -800,6 +841,7 @@ def cmd_logs(args: argparse.Namespace) -> None:
     if args.follow:
         # Live tail with follow
         import subprocess
+
         try:
             subprocess.run(["tail", "-f", str(log_path)])
         except KeyboardInterrupt:
@@ -837,7 +879,9 @@ def cmd_attach(_args: argparse.Namespace) -> None:
     if not alive:
         # Show any recent logs instead
         if logs_dir.exists():
-            available = sorted(logs_dir.glob("*.log"), key=lambda f: f.stat().st_mtime, reverse=True)
+            available = sorted(
+                logs_dir.glob("*.log"), key=lambda f: f.stat().st_mtime, reverse=True
+            )
             if available:
                 print("No active agents. Recent logs:")
                 for f in available[:10]:
@@ -850,34 +894,63 @@ def cmd_attach(_args: argparse.Namespace) -> None:
     session_name = "warchief"
 
     # Kill existing warchief tmux session if any
-    subprocess.run(["tmux", "kill-session", "-t", session_name],
-                   capture_output=True)
+    subprocess.run(["tmux", "kill-session", "-t", session_name], capture_output=True)
 
     # Create new session with first agent
     first = alive[0]
     first_log = logs_dir / f"{first.id}.log"
-    first_cmd = f"tail -f {first_log}" if first_log.exists() else f"echo 'Waiting for {first.id} output...' && sleep 3 && tail -f {first_log}"
+    first_cmd = (
+        f"tail -f {first_log}"
+        if first_log.exists()
+        else f"echo 'Waiting for {first.id} output...' && sleep 3 && tail -f {first_log}"
+    )
 
-    subprocess.run([
-        "tmux", "new-session", "-d", "-s", session_name,
-        "-n", first.id, first_cmd,
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "new-session",
+            "-d",
+            "-s",
+            session_name,
+            "-n",
+            first.id,
+            first_cmd,
+        ]
+    )
 
     # Add panes for remaining agents
     for agent in alive[1:]:
         agent_log = logs_dir / f"{agent.id}.log"
-        tail_cmd = f"tail -f {agent_log}" if agent_log.exists() else f"echo 'Waiting for {agent.id}...' && sleep 3 && tail -f {agent_log}"
-        subprocess.run([
-            "tmux", "split-window", "-t", session_name, "-v", tail_cmd,
-        ])
+        tail_cmd = (
+            f"tail -f {agent_log}"
+            if agent_log.exists()
+            else f"echo 'Waiting for {agent.id}...' && sleep 3 && tail -f {agent_log}"
+        )
+        subprocess.run(
+            [
+                "tmux",
+                "split-window",
+                "-t",
+                session_name,
+                "-v",
+                tail_cmd,
+            ]
+        )
 
     # Add a status pane at the bottom
     wc_cmd = shutil.which("warchief") or "warchief"
-    subprocess.run([
-        "tmux", "split-window", "-t", session_name, "-v",
-        "-l", "8",  # 8 lines tall
-        f"watch -n 5 '{wc_cmd} board'",
-    ])
+    subprocess.run(
+        [
+            "tmux",
+            "split-window",
+            "-t",
+            session_name,
+            "-v",
+            "-l",
+            "8",  # 8 lines tall
+            f"watch -n 5 '{wc_cmd} board'",
+        ]
+    )
 
     # Even out the panes
     subprocess.run(["tmux", "select-layout", "-t", session_name, "tiled"])
@@ -951,6 +1024,7 @@ def cmd_drop(args: argparse.Namespace) -> None:
 
     # Clean up scratchpad
     from warchief.scratchpad import clear_scratchpad
+
     clear_scratchpad(project_root, task.id)
 
     # Clean up saved sessions
@@ -959,7 +1033,7 @@ def cmd_drop(args: argparse.Namespace) -> None:
         for sf in sessions_dir.glob(f"{task.id}-*.session"):
             sf.unlink(missing_ok=True)
 
-    print(f"Dropped task {task.id} \"{task.title}\" ({cleaned} log files cleaned)")
+    print(f'Dropped task {task.id} "{task.title}" ({cleaned} log files cleaned)')
 
 
 def cmd_grant(args: argparse.Namespace) -> None:
@@ -987,7 +1061,10 @@ def cmd_grant(args: argparse.Namespace) -> None:
         return
 
     if not args.tools_text:
-        print("Error: provide tools to grant (e.g. 'figma console' or 'mcp__figma__*')", file=sys.stderr)
+        print(
+            "Error: provide tools to grant (e.g. 'figma console' or 'mcp__figma__*')",
+            file=sys.stderr,
+        )
         store.close()
         sys.exit(1)
 
@@ -1046,7 +1123,8 @@ def cmd_purge(args: argparse.Namespace) -> None:
         store._conn.execute(
             """DELETE FROM events WHERE id NOT IN (
                 SELECT id FROM events ORDER BY created_at DESC LIMIT ?
-            )""", (keep_events,),
+            )""",
+            (keep_events,),
         )
         removed_events = total_events - keep_events
 
@@ -1068,13 +1146,16 @@ def cmd_purge(args: argparse.Namespace) -> None:
             if prompt_file.stem not in all_agents:
                 prompt_file.unlink()
 
-    print(f"Purged: {removed_tasks} closed task(s), {removed_agents} dead agent(s), "
-          f"{removed_events} old event(s), {removed_logs} stale log file(s)")
+    print(
+        f"Purged: {removed_tasks} closed task(s), {removed_agents} dead agent(s), "
+        f"{removed_events} old event(s), {removed_logs} stale log file(s)"
+    )
 
 
 def cmd_feed(_args: argparse.Namespace) -> None:
     _ensure_initialized()
     from warchief.feed import render_feed
+
     store = _get_store()
     print(render_feed(store))
     store.close()
@@ -1083,6 +1164,7 @@ def cmd_feed(_args: argparse.Namespace) -> None:
 def cmd_backup(_args: argparse.Namespace) -> None:
     _ensure_initialized()
     from warchief.backup import create_backup
+
     store = _get_store()
     path = create_backup(Path.cwd(), store)
     store.close()
@@ -1092,6 +1174,7 @@ def cmd_backup(_args: argparse.Namespace) -> None:
 def cmd_restore(args: argparse.Namespace) -> None:
     _ensure_initialized()
     from warchief.backup import list_backups, restore_backup
+
     store = _get_store()
 
     if hasattr(args, "file") and args.file:
@@ -1107,7 +1190,9 @@ def cmd_restore(args: argparse.Namespace) -> None:
 
     counts = restore_backup(Path.cwd(), store, backup_path)
     store.close()
-    print(f"Restored: {counts['tasks']} tasks, {counts['events']} events, {counts['agents']} agents")
+    print(
+        f"Restored: {counts['tasks']} tasks, {counts['events']} events, {counts['agents']} agents"
+    )
 
 
 def cmd_daemon(args: argparse.Namespace) -> None:
@@ -1116,12 +1201,14 @@ def cmd_daemon(args: argparse.Namespace) -> None:
 
     if action == "start":
         from warchief.daemon import Daemon
+
         daemon = Daemon(Path.cwd())
         fg = hasattr(args, "foreground") and args.foreground
         print("Starting daemon..." + (" (foreground)" if fg else ""))
         daemon.start(foreground=fg)
     elif action == "stop":
         from warchief.daemon import stop_daemon
+
         if stop_daemon(Path.cwd()):
             print("Daemon stopped.")
         else:
@@ -1129,11 +1216,13 @@ def cmd_daemon(args: argparse.Namespace) -> None:
     elif action == "status":
         from warchief.daemon import daemon_status
         from warchief.metrics import format_duration
+
         s = daemon_status(Path.cwd())
         if s["running"]:
             age = ""
             if s["last_heartbeat"]:
                 import time
+
                 age = f" (last heartbeat {format_duration(time.time() - s['last_heartbeat'])} ago)"
             print(f"Daemon running (PID {s['pid']}){age}")
         else:
@@ -1143,12 +1232,14 @@ def cmd_daemon(args: argparse.Namespace) -> None:
 def cmd_doctor(_args: argparse.Namespace) -> None:
     _ensure_initialized()
     from warchief.doctor import format_report, run_doctor
+
     report = run_doctor(Path.cwd())
     print(format_report(report))
 
 
 def cmd_sessions(_args: argparse.Namespace) -> None:
     from warchief.sessions import get_active_sessions, list_sessions
+
     sessions = list_sessions()
     active = get_active_sessions()
     active_roots = {s.project_root for s in active}
@@ -1167,6 +1258,7 @@ def cmd_sessions(_args: argparse.Namespace) -> None:
 
 def cmd_connect(args: argparse.Namespace) -> None:
     from warchief.sessions import get_active_sessions
+
     active = get_active_sessions()
     if not active:
         print("No active sessions to connect to.")
@@ -1210,6 +1302,7 @@ def cmd_dashboard(args: argparse.Namespace) -> None:
         run_server(Path.cwd(), port=args.port)
         return
     from warchief.dashboard import render_dashboard_snapshot, run_dashboard
+
     if args.snapshot:
         print(render_dashboard_snapshot(Path.cwd()))
     else:
@@ -1219,6 +1312,7 @@ def cmd_dashboard(args: argparse.Namespace) -> None:
 def cmd_costs(_args: argparse.Namespace) -> None:
     _ensure_initialized()
     from warchief.cost_tracker import compute_cost_summary, format_cost_summary
+
     summary = compute_cost_summary(Path.cwd())
     print(format_cost_summary(summary))
 
@@ -1226,6 +1320,7 @@ def cmd_costs(_args: argparse.Namespace) -> None:
 def cmd_observe(_args: argparse.Namespace) -> None:
     _ensure_initialized()
     from warchief.observability import export_metrics_file, format_metrics_summary
+
     store = _get_store()
     print(format_metrics_summary(store))
     path = export_metrics_file(store, Path.cwd())
@@ -1274,21 +1369,27 @@ def cmd_agent_update(args: argparse.Namespace) -> None:
             if role in ("integrator", "tester", "pr_creator"):
                 allowed.add("closed")
             if args.status not in allowed:
-                print(f"Error: Agents can only set status to: {', '.join(sorted(allowed))}", file=sys.stderr)
+                print(
+                    f"Error: Agents can only set status to: {', '.join(sorted(allowed))}",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
             updates["status"] = args.status
 
         if args.comment:
             # Log the comment as an event
             from warchief.models import EventRecord  # noqa: WPS433
+
             agent_id = os.environ.get("WARCHIEF_AGENT", "unknown")
-            store.log_event(EventRecord(
-                event_type="comment",
-                task_id=task_id,
-                agent_id=agent_id,
-                details={"comment": args.comment},
-                actor=agent_id,
-            ))
+            store.log_event(
+                EventRecord(
+                    event_type="comment",
+                    task_id=task_id,
+                    agent_id=agent_id,
+                    details={"comment": args.comment},
+                    actor=agent_id,
+                )
+            )
             print(f"Comment logged for {task_id}")
 
         if args.add_label:
@@ -1305,6 +1406,7 @@ def cmd_agent_update(args: argparse.Namespace) -> None:
 
         if getattr(args, "question", None):
             from warchief.models import EventRecord, MessageRecord  # noqa: WPS433
+
             agent_id = os.environ.get("WARCHIEF_AGENT", task_id)
             # Force status to blocked
             updates["status"] = "blocked"
@@ -1314,26 +1416,31 @@ def cmd_agent_update(args: argparse.Namespace) -> None:
                 current.append("question")
             updates["labels"] = current
             # Store question as a message
-            store.create_message(MessageRecord(
-                id="",
-                from_agent=task_id,
-                to_agent="user",
-                message_type="question",
-                body=args.question,
-                persistent=True,
-            ))
+            store.create_message(
+                MessageRecord(
+                    id="",
+                    from_agent=task_id,
+                    to_agent="user",
+                    message_type="question",
+                    body=args.question,
+                    persistent=True,
+                )
+            )
             # Log event
-            store.log_event(EventRecord(
-                event_type="question",
-                task_id=task_id,
-                agent_id=agent_id,
-                details={"question": args.question},
-                actor=agent_id,
-            ))
+            store.log_event(
+                EventRecord(
+                    event_type="question",
+                    task_id=task_id,
+                    agent_id=agent_id,
+                    details={"question": args.question},
+                    actor=agent_id,
+                )
+            )
             print(f"Question recorded for {task_id}: {args.question}")
 
         if getattr(args, "handoff", None):
             from warchief.scratchpad import append_scratchpad
+
             agent_id = os.environ.get("WARCHIEF_AGENT", "unknown")
             role = os.environ.get("WARCHIEF_ROLE", "unknown")
             append_scratchpad(project_root, task_id, role, agent_id, args.handoff)
@@ -1350,6 +1457,7 @@ def cmd_answer(args: argparse.Namespace) -> None:
     """Answer a pending agent question."""
     _ensure_initialized()
     from warchief.models import EventRecord, MessageRecord  # noqa: WPS433
+
     store = _get_store()
     try:
         task = store.get_task(args.task_id)
@@ -1361,17 +1469,20 @@ def cmd_answer(args: argparse.Namespace) -> None:
             sys.exit(1)
 
         # Store answer as a message
-        store.create_message(MessageRecord(
-            id="",
-            from_agent="user",
-            to_agent=args.task_id,
-            message_type="answer",
-            body=args.answer_text,
-            persistent=True,
-        ))
+        store.create_message(
+            MessageRecord(
+                id="",
+                from_agent="user",
+                to_agent=args.task_id,
+                message_type="answer",
+                body=args.answer_text,
+                persistent=True,
+            )
+        )
 
         # Check if the answer is granting MCP tool permissions
         from warchief.mcp_discovery import is_tool_grant, resolve_tool_grant
+
         granted_tools: list[str] = []
         if is_tool_grant(args.answer_text):
             granted_tools = resolve_tool_grant(args.answer_text)
@@ -1387,12 +1498,14 @@ def cmd_answer(args: argparse.Namespace) -> None:
         store.update_task(args.task_id, status="open", labels=new_labels)
 
         # Log event
-        store.log_event(EventRecord(
-            event_type="answer",
-            task_id=args.task_id,
-            details={"answer": args.answer_text, "granted_tools": granted_tools},
-            actor="user",
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="answer",
+                task_id=args.task_id,
+                details={"answer": args.answer_text, "granted_tools": granted_tools},
+                actor="user",
+            )
+        )
         print(f"Answer recorded for {args.task_id}. Task unblocked.")
     finally:
         store.close()
@@ -1425,6 +1538,7 @@ def cmd_agent_monitor(_args: argparse.Namespace) -> None:
     """Run the live agent log viewer (used by tmux UI)."""
     _ensure_initialized()
     from warchief.agent_monitor import run_monitor
+
     run_monitor(Path.cwd())
 
 
@@ -1432,19 +1546,23 @@ def cmd_control(_args: argparse.Namespace) -> None:
     """Run the interactive control pane (used by tmux UI)."""
     _ensure_initialized()
     from warchief.control import run_control
+
     run_control(Path.cwd())
 
 
 def _skeleton(phase: int):
     """Return a handler that prints a 'not yet implemented' message."""
+
     def handler(_args: argparse.Namespace) -> None:
         print(f"Not yet implemented \u2014 Phase {phase}")
+
     return handler
 
 
 # ---------------------------------------------------------------------------
 # Argument parser construction
 # ---------------------------------------------------------------------------
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -1472,8 +1590,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_create.add_argument("--labels", default="", help="Comma-separated labels")
     p_create.add_argument("--deps", default="", help="Comma-separated dependency task IDs")
     p_create.add_argument("--priority", type=int, default=5, help="Priority 1-10 (default: 5)")
-    p_create.add_argument("--tools", default="", help="Extra tools for agents (comma-separated, e.g. 'mcp__figma-console__*,mcp__figma__*')")
-    p_create.add_argument("--budget", type=float, default=0.0, help="Cost budget in USD for this task (0 = use config default)")
+    p_create.add_argument(
+        "--tools",
+        default="",
+        help="Extra tools for agents (comma-separated, e.g. 'mcp__figma-console__*,mcp__figma__*')",
+    )
+    p_create.add_argument(
+        "--budget",
+        type=float,
+        default=0.0,
+        help="Cost budget in USD for this task (0 = use config default)",
+    )
 
     # show
     p_show = sub.add_parser("show", help="Show task details")
@@ -1505,7 +1632,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_nudge.add_argument("message", help="Message for the agent")
 
     # retry
-    p_retry = sub.add_parser("retry", help="Reopen a task with feedback and send back to development")
+    p_retry = sub.add_parser(
+        "retry", help="Reopen a task with feedback and send back to development"
+    )
     p_retry.add_argument("task_id", help="Task ID")
     p_retry.add_argument("feedback", help="Feedback for the agent (what to do differently)")
 
@@ -1531,10 +1660,14 @@ def build_parser() -> argparse.ArgumentParser:
     # Skeleton commands
     p_start = sub.add_parser("start", help="Start processing a requirement")
     p_start.add_argument("requirement", nargs="?", default=None)
-    p_start.add_argument("--no-conductor", action="store_true",
-                         help="Skip conductor decomposition, create a single task")
-    p_start.add_argument("--no-tmux", action="store_true",
-                         help="Run without tmux UI (plain terminal mode)")
+    p_start.add_argument(
+        "--no-conductor",
+        action="store_true",
+        help="Skip conductor decomposition, create a single task",
+    )
+    p_start.add_argument(
+        "--no-tmux", action="store_true", help="Run without tmux UI (plain terminal mode)"
+    )
     sub.add_parser("watch", help="Watch the pipeline")
     sub.add_parser("board", help="Show task board")
     sub.add_parser("stop", help="Stop the pipeline")
@@ -1543,8 +1676,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_grant = sub.add_parser("grant", help="Grant MCP tools to a task (e.g. 'figma console')")
     p_grant.add_argument("task_id", help="Task ID")
-    p_grant.add_argument("tools_text", nargs="*", help="Tools to grant (natural language or exact patterns)")
-    p_grant.add_argument("--list", dest="list_servers", action="store_true", help="List available MCP servers")
+    p_grant.add_argument(
+        "tools_text", nargs="*", help="Tools to grant (natural language or exact patterns)"
+    )
+    p_grant.add_argument(
+        "--list", dest="list_servers", action="store_true", help="List available MCP servers"
+    )
 
     p_drop = sub.add_parser("drop", help="Drop a task — kill agent, close task, clean up")
     p_drop.add_argument("task_id", help="Task ID to drop")
@@ -1556,20 +1693,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_logs = sub.add_parser("logs", help="Show agent output")
     p_logs.add_argument("agent", help="Agent name (e.g. developer-thrall)")
-    p_logs.add_argument("-f", "--follow", action="store_true",
-                        help="Follow log output in real-time (like tail -f)")
-    p_logs.add_argument("-n", "--lines", type=int, default=50,
-                        help="Number of lines to show (default: 50)")
-    p_logs.add_argument("--events", action="store_true",
-                        help="Show pipeline events instead of agent output")
+    p_logs.add_argument(
+        "-f", "--follow", action="store_true", help="Follow log output in real-time (like tail -f)"
+    )
+    p_logs.add_argument(
+        "-n", "--lines", type=int, default=50, help="Number of lines to show (default: 50)"
+    )
+    p_logs.add_argument(
+        "--events", action="store_true", help="Show pipeline events instead of agent output"
+    )
 
     sub.add_parser("attach", help="Open tmux with live agent output")
 
     p_purge = sub.add_parser("purge", help="Clean up old tasks, agents, events, logs")
-    p_purge.add_argument("--keep-events", type=int, default=50,
-                         help="Keep last N events (default: 50)")
-    p_purge.add_argument("--keep-closed", action="store_true",
-                         help="Don't delete closed tasks")
+    p_purge.add_argument(
+        "--keep-events", type=int, default=50, help="Keep last N events (default: 50)"
+    )
+    p_purge.add_argument("--keep-closed", action="store_true", help="Don't delete closed tasks")
     sub.add_parser("feed", help="Show activity feed")
     sub.add_parser("metrics", help="Show metrics")
     sub.add_parser("backup", help="Backup project state")
@@ -1578,11 +1718,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_restore.add_argument("--file", default=None, help="Backup file path")
 
     p_daemon = sub.add_parser("daemon", help="Manage the background daemon")
-    p_daemon.add_argument("action", nargs="?", default="status",
-                          choices=["start", "stop", "status"],
-                          help="Daemon action (default: status)")
-    p_daemon.add_argument("--foreground", action="store_true",
-                          help="Run daemon in foreground")
+    p_daemon.add_argument(
+        "action",
+        nargs="?",
+        default="status",
+        choices=["start", "stop", "status"],
+        help="Daemon action (default: status)",
+    )
+    p_daemon.add_argument("--foreground", action="store_true", help="Run daemon in foreground")
 
     sub.add_parser("doctor", help="Diagnose configuration issues")
     sub.add_parser("sessions", help="List active sessions")
@@ -1592,14 +1735,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Phase 6 commands
     p_dashboard = sub.add_parser("dashboard", help="Launch interactive dashboard")
-    p_dashboard.add_argument("--refresh", type=float, default=2.0,
-                              help="Refresh interval in seconds (default: 2)")
-    p_dashboard.add_argument("--snapshot", action="store_true",
-                              help="Print single snapshot instead of live view")
-    p_dashboard.add_argument("--web", action="store_true",
-                              help="Launch web dashboard (requires fastapi+uvicorn)")
-    p_dashboard.add_argument("--port", type=int, default=8095,
-                              help="Port for web dashboard (default: 8095)")
+    p_dashboard.add_argument(
+        "--refresh", type=float, default=2.0, help="Refresh interval in seconds (default: 2)"
+    )
+    p_dashboard.add_argument(
+        "--snapshot", action="store_true", help="Print single snapshot instead of live view"
+    )
+    p_dashboard.add_argument(
+        "--web", action="store_true", help="Launch web dashboard (requires fastapi+uvicorn)"
+    )
+    p_dashboard.add_argument(
+        "--port", type=int, default=8095, help="Port for web dashboard (default: 8095)"
+    )
 
     sub.add_parser("costs", help="Show cost breakdown")
     sub.add_parser("observe", help="Export observability metrics")
@@ -1607,11 +1754,17 @@ def build_parser() -> argparse.ArgumentParser:
     # Agent-facing commands
     p_agent_update = sub.add_parser("agent-update", help="Update task (for agents)")
     p_agent_update.add_argument("--task-id", help="Task ID (defaults to WARCHIEF_TASK env)")
-    p_agent_update.add_argument("--status", choices=["open", "blocked", "closed"], help="New status")
+    p_agent_update.add_argument(
+        "--status", choices=["open", "blocked", "closed"], help="New status"
+    )
     p_agent_update.add_argument("--comment", help="Add a comment")
     p_agent_update.add_argument("--add-label", help="Add a label (only 'rejected' allowed)")
-    p_agent_update.add_argument("--question", help="Ask the user a question (sets status to blocked)")
-    p_agent_update.add_argument("--handoff", help="Write handoff notes for the next agent (what you did, decisions, issues)")
+    p_agent_update.add_argument(
+        "--question", help="Ask the user a question (sets status to blocked)"
+    )
+    p_agent_update.add_argument(
+        "--handoff", help="Write handoff notes for the next agent (what you did, decisions, issues)"
+    )
 
     # answer
     p_answer = sub.add_parser("answer", help="Answer a pending agent question")

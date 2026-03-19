@@ -4,6 +4,7 @@ First agent (planner or developer) explores the codebase and writes a
 project context summary. Subsequent agents get this injected into their
 worktree as CLAUDE.md, skipping expensive codebase exploration.
 """
+
 from __future__ import annotations
 
 import logging
@@ -54,17 +55,43 @@ def generate_project_context(project_root: Path) -> str:
     # Project structure (top 2 levels)
     try:
         result = subprocess.run(
-            ["find", ".", "-maxdepth", "2",
-             "-not", "-path", "./.git/*",
-             "-not", "-path", "./node_modules/*",
-             "-not", "-path", "./.warchief/*",
-             "-not", "-path", "./.warchief-worktrees/*",
-             "-not", "-path", "./.venv/*",
-             "-not", "-path", "./.next/*",
-             "-not", "-path", "./dist/*",
-             "-not", "-name", "__pycache__",
-             "-not", "-name", ".DS_Store"],
-            cwd=project_root, capture_output=True, text=True, timeout=10,
+            [
+                "find",
+                ".",
+                "-maxdepth",
+                "2",
+                "-not",
+                "-path",
+                "./.git/*",
+                "-not",
+                "-path",
+                "./node_modules/*",
+                "-not",
+                "-path",
+                "./.warchief/*",
+                "-not",
+                "-path",
+                "./.warchief-worktrees/*",
+                "-not",
+                "-path",
+                "./.venv/*",
+                "-not",
+                "-path",
+                "./.next/*",
+                "-not",
+                "-path",
+                "./dist/*",
+                "-not",
+                "-name",
+                "__pycache__",
+                "-not",
+                "-name",
+                ".DS_Store",
+            ],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0:
             tree = result.stdout.strip()
@@ -79,27 +106,43 @@ def generate_project_context(project_root: Path) -> str:
     if (p / "package.json").exists():
         try:
             import json
+
             pkg = json.loads((p / "package.json").read_text())
             deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
-            if "react" in deps: frameworks.append("React")
-            if "vue" in deps: frameworks.append("Vue")
-            if "svelte" in deps: frameworks.append("Svelte")
-            if "next" in deps: frameworks.append("Next.js")
-            if "nuxt" in deps: frameworks.append("Nuxt")
-            if "express" in deps: frameworks.append("Express.js")
-            if "fastify" in deps: frameworks.append("Fastify")
-            if "vitest" in deps: frameworks.append("Vitest (testing)")
-            if "jest" in deps: frameworks.append("Jest (testing)")
-            if "playwright" in deps or "@playwright/test" in deps: frameworks.append("Playwright (E2E)")
-            if "prisma" in deps or "@prisma/client" in deps: frameworks.append("Prisma ORM")
-            if "tailwindcss" in deps: frameworks.append("Tailwind CSS")
-            if "typescript" in deps: frameworks.append("TypeScript")
+            if "react" in deps:
+                frameworks.append("React")
+            if "vue" in deps:
+                frameworks.append("Vue")
+            if "svelte" in deps:
+                frameworks.append("Svelte")
+            if "next" in deps:
+                frameworks.append("Next.js")
+            if "nuxt" in deps:
+                frameworks.append("Nuxt")
+            if "express" in deps:
+                frameworks.append("Express.js")
+            if "fastify" in deps:
+                frameworks.append("Fastify")
+            if "vitest" in deps:
+                frameworks.append("Vitest (testing)")
+            if "jest" in deps:
+                frameworks.append("Jest (testing)")
+            if "playwright" in deps or "@playwright/test" in deps:
+                frameworks.append("Playwright (E2E)")
+            if "prisma" in deps or "@prisma/client" in deps:
+                frameworks.append("Prisma ORM")
+            if "tailwindcss" in deps:
+                frameworks.append("Tailwind CSS")
+            if "typescript" in deps:
+                frameworks.append("TypeScript")
 
             scripts = pkg.get("scripts", {})
             if scripts:
-                sections.append("## npm Scripts\n" + "\n".join(
-                    f"- `{k}`: `{v}`" for k, v in scripts.items()
-                ) + "\n")
+                sections.append(
+                    "## npm Scripts\n"
+                    + "\n".join(f"- `{k}`: `{v}`" for k, v in scripts.items())
+                    + "\n"
+                )
         except (json.JSONDecodeError, OSError):
             pass
 
@@ -107,17 +150,25 @@ def generate_project_context(project_root: Path) -> str:
         frameworks.append("Python")
         try:
             content = (p / "pyproject.toml").read_text()
-            if "django" in content.lower(): frameworks.append("Django")
-            if "flask" in content.lower(): frameworks.append("Flask")
-            if "fastapi" in content.lower(): frameworks.append("FastAPI")
-            if "pytest" in content.lower(): frameworks.append("pytest (testing)")
+            if "django" in content.lower():
+                frameworks.append("Django")
+            if "flask" in content.lower():
+                frameworks.append("Flask")
+            if "fastapi" in content.lower():
+                frameworks.append("FastAPI")
+            if "pytest" in content.lower():
+                frameworks.append("pytest (testing)")
         except OSError:
             pass
 
-    if (p / "go.mod").exists(): frameworks.append("Go")
-    if (p / "Cargo.toml").exists(): frameworks.append("Rust")
-    if (p / "pom.xml").exists(): frameworks.append("Java (Maven)")
-    if (p / "build.gradle").exists(): frameworks.append("Java (Gradle)")
+    if (p / "go.mod").exists():
+        frameworks.append("Go")
+    if (p / "Cargo.toml").exists():
+        frameworks.append("Rust")
+    if (p / "pom.xml").exists():
+        frameworks.append("Java (Maven)")
+    if (p / "build.gradle").exists():
+        frameworks.append("Java (Gradle)")
 
     if frameworks:
         sections.append("## Tech Stack\n" + ", ".join(frameworks) + "\n")

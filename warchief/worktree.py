@@ -1,4 +1,5 @@
 """Git worktree management for agent sandboxes."""
+
 from __future__ import annotations
 
 import logging
@@ -38,19 +39,25 @@ def create_branch_worktree(
             # Broken directory from previous failed attempt — remove it
             log.warning("Removing broken worktree directory at %s", wt_path)
             import shutil
+
             shutil.rmtree(wt_path, ignore_errors=True)
 
     # Ensure main repo is not on the feature branch (would block worktree creation)
     try:
         current = subprocess.run(
             ["git", "branch", "--show-current"],
-            cwd=project_root, capture_output=True, text=True, timeout=5,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if current.stdout.strip() == branch_name:
             log.warning("Main repo is on %s — switching to %s", branch_name, base_branch)
             subprocess.run(
                 ["git", "checkout", base_branch],
-                cwd=project_root, capture_output=True, timeout=10,
+                cwd=project_root,
+                capture_output=True,
+                timeout=10,
             )
     except (subprocess.TimeoutExpired, OSError):
         pass
@@ -59,7 +66,9 @@ def create_branch_worktree(
     try:
         subprocess.run(
             ["git", "show-ref", "--verify", f"refs/heads/{branch_name}"],
-            cwd=project_root, check=True, capture_output=True,
+            cwd=project_root,
+            check=True,
+            capture_output=True,
         )
         branch_exists = True
     except subprocess.CalledProcessError:
@@ -70,14 +79,18 @@ def create_branch_worktree(
         result = subprocess.run(cmd, cwd=project_root, capture_output=True, text=True)
         if result.returncode != 0:
             log.error("git worktree failed: %s\nstderr: %s", " ".join(cmd), result.stderr.strip())
-            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+            raise subprocess.CalledProcessError(
+                result.returncode, cmd, result.stdout, result.stderr
+            )
         return result
 
     if branch_exists:
         # Check if branch is already checked out in another worktree
         result = subprocess.run(
             ["git", "worktree", "list", "--porcelain"],
-            cwd=project_root, capture_output=True, text=True,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
         )
         branch_in_use = f"branch refs/heads/{branch_name}" in result.stdout
 
@@ -117,11 +130,14 @@ def create_detached_worktree(
             # Broken directory from previous failed attempt — remove it
             log.warning("Removing broken worktree directory at %s", wt_path)
             import shutil
+
             shutil.rmtree(wt_path, ignore_errors=True)
 
     subprocess.run(
         ["git", "worktree", "add", "--detach", str(wt_path), commit_ref],
-        cwd=project_root, check=True, capture_output=True,
+        cwd=project_root,
+        check=True,
+        capture_output=True,
     )
 
     _symlink_warchief_dir(project_root, wt_path)
@@ -154,6 +170,7 @@ def create_integrator_worktree(
             # Broken directory from previous failed attempt — remove it
             log.warning("Removing broken worktree directory at %s", wt_path)
             import shutil
+
             shutil.rmtree(wt_path, ignore_errors=True)
 
     # Create a temporary integration branch at the same commit as base
@@ -162,18 +179,25 @@ def create_integrator_worktree(
     # Delete stale integration branch if it exists
     subprocess.run(
         ["git", "branch", "-D", integration_branch],
-        cwd=project_root, capture_output=True,
+        cwd=project_root,
+        capture_output=True,
     )
 
     # Create worktree on a new branch starting from base
     subprocess.run(
         ["git", "worktree", "add", "-b", integration_branch, str(wt_path), base_branch],
-        cwd=project_root, check=True, capture_output=True,
+        cwd=project_root,
+        check=True,
+        capture_output=True,
     )
 
     _symlink_warchief_dir(project_root, wt_path)
-    log.info("Created integrator worktree: %s on %s (for merging into %s)",
-             wt_path, integration_branch, base_branch)
+    log.info(
+        "Created integrator worktree: %s on %s (for merging into %s)",
+        wt_path,
+        integration_branch,
+        base_branch,
+    )
     return wt_path
 
 
@@ -191,7 +215,9 @@ def finalize_integration(
         # Fast-forward the real base branch to the integration branch
         subprocess.run(
             ["git", "branch", "-f", base_branch, integration_branch],
-            cwd=project_root, check=True, capture_output=True,
+            cwd=project_root,
+            check=True,
+            capture_output=True,
         )
         log.info("Updated %s to match %s", base_branch, integration_branch)
         return True
@@ -202,13 +228,15 @@ def finalize_integration(
         # Clean up the integration branch
         subprocess.run(
             ["git", "branch", "-D", integration_branch],
-            cwd=project_root, capture_output=True,
+            cwd=project_root,
+            capture_output=True,
         )
 
 
 def remove_worktree(project_root: Path, agent_id: str) -> bool:
     """Remove a worktree and prune. Returns True if actually removed."""
     import shutil
+
     wt_path = _worktrees_root(project_root) / agent_id
     if not wt_path.exists():
         log.debug("Worktree %s already removed", wt_path)
@@ -216,7 +244,9 @@ def remove_worktree(project_root: Path, agent_id: str) -> bool:
 
     result = subprocess.run(
         ["git", "worktree", "remove", "--force", str(wt_path)],
-        cwd=project_root, capture_output=True, text=True,
+        cwd=project_root,
+        capture_output=True,
+        text=True,
     )
 
     # If git worktree remove failed, force-delete the directory
@@ -227,7 +257,8 @@ def remove_worktree(project_root: Path, agent_id: str) -> bool:
 
     subprocess.run(
         ["git", "worktree", "prune"],
-        cwd=project_root, capture_output=True,
+        cwd=project_root,
+        capture_output=True,
     )
 
     removed = not wt_path.exists()
@@ -246,7 +277,8 @@ def repair_worktree(project_root: Path, agent_id: str) -> bool:
 
     subprocess.run(
         ["git", "worktree", "repair", str(wt_path)],
-        cwd=project_root, capture_output=True,
+        cwd=project_root,
+        capture_output=True,
     )
 
     _symlink_warchief_dir(project_root, wt_path)
@@ -263,7 +295,9 @@ def list_worktrees(project_root: Path) -> list[str]:
 
 
 def _remove_stale_worktree_for_branch(
-    project_root: Path, branch_name: str, porcelain_output: str,
+    project_root: Path,
+    branch_name: str,
+    porcelain_output: str,
 ) -> None:
     """Find and remove the worktree that has branch_name checked out."""
     # Parse porcelain output to find the worktree path
@@ -271,7 +305,7 @@ def _remove_stale_worktree_for_branch(
     current_path = None
     for line in porcelain_output.split("\n"):
         if line.startswith("worktree "):
-            current_path = line[len("worktree "):]
+            current_path = line[len("worktree ") :]
         elif line == f"branch refs/heads/{branch_name}" and current_path:
             # Don't remove the main worktree
             if current_path == str(project_root):
@@ -280,11 +314,13 @@ def _remove_stale_worktree_for_branch(
             log.info("Removing stale worktree at %s (has branch %s)", current_path, branch_name)
             subprocess.run(
                 ["git", "worktree", "remove", "--force", current_path],
-                cwd=project_root, capture_output=True,
+                cwd=project_root,
+                capture_output=True,
             )
             subprocess.run(
                 ["git", "worktree", "prune"],
-                cwd=project_root, capture_output=True,
+                cwd=project_root,
+                capture_output=True,
             )
             return
 

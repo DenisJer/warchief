@@ -1,4 +1,5 @@
 """Recovery — self-healing for orphans, zombies, and broken worktrees."""
+
 from __future__ import annotations
 
 import logging
@@ -27,13 +28,15 @@ def recover_orphans(store: TaskStore) -> list[str]:
     for task in orphans:
         log.warning("Recovering orphaned task %s (was %s)", task.id, task.assigned_agent)
         store.update_task(task.id, status="open", assigned_agent=None)
-        store.log_event(EventRecord(
-            event_type="orphan_recovery",
-            task_id=task.id,
-            agent_id=task.assigned_agent,
-            details={"previous_status": task.status},
-            actor="recovery",
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="orphan_recovery",
+                task_id=task.id,
+                agent_id=task.assigned_agent,
+                details={"previous_status": task.status},
+                actor="recovery",
+            )
+        )
         recovered.append(task.id)
 
     if recovered:
@@ -80,12 +83,14 @@ def recover_zombie_agents(
                 if task and task.status == "in_progress":
                     store.update_task(task.id, status="open", assigned_agent=None)
 
-            store.log_event(EventRecord(
-                event_type="zombie_recovery",
-                agent_id=agent.id,
-                task_id=agent.current_task,
-                actor="recovery",
-            ))
+            store.log_event(
+                EventRecord(
+                    event_type="zombie_recovery",
+                    agent_id=agent.id,
+                    task_id=agent.current_task,
+                    actor="recovery",
+                )
+            )
             zombies.append(agent.id)
 
     if zombies:

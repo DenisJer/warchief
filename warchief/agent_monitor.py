@@ -3,6 +3,7 @@
 Shows a list of agents and tails the selected agent's log file.
 Automatically picks up new agents as they spawn.
 """
+
 from __future__ import annotations
 
 import os
@@ -122,6 +123,7 @@ def _read_new_content(path: Path, offset: int) -> str:
 def _check_stdin() -> bool:
     """Non-blocking check if there's input available on stdin."""
     import select
+
     try:
         ready, _, _ = select.select([sys.stdin], [], [], 0)
         return bool(ready)

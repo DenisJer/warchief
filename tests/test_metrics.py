@@ -1,4 +1,5 @@
 """Tests for metrics computation."""
+
 from __future__ import annotations
 
 import time
@@ -56,10 +57,15 @@ class TestPipelineMetrics:
 
     def test_avg_completion_time(self, store):
         now = time.time()
-        store.create_task(TaskRecord(
-            id="wc-fast", title="Fast", status="closed",
-            created_at=now - 100, closed_at=now,
-        ))
+        store.create_task(
+            TaskRecord(
+                id="wc-fast",
+                title="Fast",
+                status="closed",
+                created_at=now - 100,
+                closed_at=now,
+            )
+        )
         # Need to manually set closed_at since create_task overrides created_at
         store._conn.execute(
             "UPDATE tasks SET closed_at = ?, created_at = ? WHERE id = ?",
@@ -79,21 +85,30 @@ class TestTaskTrace:
         store.create_task(TaskRecord(id="wc-t01", title="Traced"))
 
         now = time.time()
-        store.log_event(EventRecord(
-            event_type="spawn", task_id="wc-t01",
-            details={"stage": "development"},
-            created_at=now - 300,
-        ))
-        store.log_event(EventRecord(
-            event_type="advance", task_id="wc-t01",
-            details={"from_stage": "development", "to_stage": "reviewing"},
-            created_at=now - 200,
-        ))
-        store.log_event(EventRecord(
-            event_type="advance", task_id="wc-t01",
-            details={"from_stage": "reviewing", "to_stage": "pr-creation"},
-            created_at=now - 100,
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="spawn",
+                task_id="wc-t01",
+                details={"stage": "development"},
+                created_at=now - 300,
+            )
+        )
+        store.log_event(
+            EventRecord(
+                event_type="advance",
+                task_id="wc-t01",
+                details={"from_stage": "development", "to_stage": "reviewing"},
+                created_at=now - 200,
+            )
+        )
+        store.log_event(
+            EventRecord(
+                event_type="advance",
+                task_id="wc-t01",
+                details={"from_stage": "reviewing", "to_stage": "pr-creation"},
+                created_at=now - 100,
+            )
+        )
 
         trace = compute_task_trace(store, "wc-t01")
         assert trace is not None
@@ -103,12 +118,18 @@ class TestTaskTrace:
 
     def test_trace_with_rejections(self, store):
         store.create_task(TaskRecord(id="wc-t02", title="Rejected"))
-        store.log_event(EventRecord(
-            event_type="reject", task_id="wc-t02",
-        ))
-        store.log_event(EventRecord(
-            event_type="reject", task_id="wc-t02",
-        ))
+        store.log_event(
+            EventRecord(
+                event_type="reject",
+                task_id="wc-t02",
+            )
+        )
+        store.log_event(
+            EventRecord(
+                event_type="reject",
+                task_id="wc-t02",
+            )
+        )
 
         trace = compute_task_trace(store, "wc-t02")
         assert trace.rejections == 2
