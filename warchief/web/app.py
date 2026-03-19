@@ -3,6 +3,7 @@
 Serves a WoW-themed single-page dashboard on localhost with REST endpoints
 for task actions and a WebSocket that pushes full pipeline state every 2 seconds.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -27,6 +28,8 @@ from warchief.task_store import TaskStore
 _project_root: Path = Path.cwd()
 _session_start: float = time.time()
 _shared_store: TaskStore | None = None
+_last_state_hash: str = ""
+_cached_state: dict | None = None
 
 
 def _store() -> TaskStore:
@@ -43,25 +46,37 @@ def _store() -> TaskStore:
 
 def _build_state() -> dict:
     """Build the full dashboard state dict."""
+    global _last_state_hash, _cached_state
+
     store = _store()
     tasks = store.list_tasks()
     agents = store.get_running_agents()
+
+    # Quick change check — skip rebuild if nothing changed
+    state_hash = str(max((t.updated_at or 0 for t in tasks), default=0)) + str(len(tasks))
+    state_hash += str(len(agents))
+    if state_hash == _last_state_hash and _cached_state is not None:
+        return _cached_state
+
     metrics = compute_pipeline_metrics(store)
     config = read_config(_project_root)
     events = store.get_events(limit=20)
     all_question_tasks = store.list_tasks(has_label="question")
     question_tasks = [t for t in all_question_tasks if t.status != "closed"]
+    all_messages = store.get_all_messages_by_task()
 
     question_data: list[dict] = []
     for qt in question_tasks:
-        msgs = store.get_task_messages(qt.id)
+        msgs = all_messages.get(qt.id, [])
         q_msgs = [m for m in msgs if m.message_type == "question"]
         latest_q = q_msgs[-1].body if q_msgs else ""
-        question_data.append({
-            "task_id": qt.id,
-            "title": qt.title,
-            "question": latest_q,
-        })
+        question_data.append(
+            {
+                "task_id": qt.id,
+                "title": qt.title,
+                "question": latest_q,
+            }
+        )
 
     cost_summary = compute_cost_summary(_project_root)
     now = time.time()
@@ -79,8 +94,7 @@ def _build_state() -> dict:
             # Get latest question if task has question label
             question_text = ""
             if "question" in t.labels:
-                q_msgs = [m for m in store.get_task_messages(t.id, limit=5)
-                          if m.message_type == "question"]
+                q_msgs = [m for m in all_messages.get(t.id, []) if m.message_type == "question"]
                 if q_msgs:
                     question_text = q_msgs[-1].body
             # Get block reason from events
@@ -101,43 +115,49 @@ def _build_state() -> dict:
                     if ev.agent_id:
                         last_agent_id = ev.agent_id
                         break
-            cards.append({
-                "id": t.id,
-                "title": t.title,
-                "status": t.status,
-                "agent_id": agent.id if agent else None,
-                "last_agent_id": last_agent_id,
-                "age": age,
-                "labels": t.labels,
-                "scratchpad": scratchpad[:500] if scratchpad else "",
-                "question": question_text,
-                "block_reason": block_reason,
-            })
+            cards.append(
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "status": t.status,
+                    "agent_id": agent.id if agent else None,
+                    "last_agent_id": last_agent_id,
+                    "age": age,
+                    "labels": t.labels,
+                    "scratchpad": scratchpad[:500] if scratchpad else "",
+                    "question": question_text,
+                    "block_reason": block_reason,
+                }
+            )
         pipeline.append({"stage": stage, "tasks": cards, "count": len(cards)})
 
     # Agents list
     agent_list = []
     for a in agents:
         age = format_duration(now - a.spawned_at) if a.spawned_at else ""
-        agent_list.append({
-            "id": a.id,
-            "role": a.role,
-            "status": a.status,
-            "task": a.current_task or "",
-            "age": age,
-        })
+        agent_list.append(
+            {
+                "id": a.id,
+                "role": a.role,
+                "status": a.status,
+                "task": a.current_task or "",
+                "age": age,
+            }
+        )
 
     # Events
     max_age = 600
     recent_events = []
     for e in events:
         if e.created_at and (now - e.created_at) < max_age:
-            recent_events.append({
-                "type": e.event_type,
-                "task_id": e.task_id or "",
-                "agent_id": e.agent_id or "",
-                "age": format_duration(now - e.created_at) if e.created_at else "",
-            })
+            recent_events.append(
+                {
+                    "type": e.event_type,
+                    "task_id": e.task_id or "",
+                    "agent_id": e.agent_id or "",
+                    "age": format_duration(now - e.created_at) if e.created_at else "",
+                }
+            )
 
     # MCP servers
     mcp_servers = get_mcp_servers()
@@ -150,12 +170,13 @@ def _build_state() -> dict:
         try:
             watcher_pid = int(watcher_lock.read_text().strip())
             import os
+
             os.kill(watcher_pid, 0)  # Check if alive
             watcher_running = True
         except (ValueError, ProcessLookupError, PermissionError, OSError):
             watcher_running = False
 
-    return {
+    result = {
         "timestamp": now,
         "project": _project_root.name,
         "project_path": str(_project_root),
@@ -170,7 +191,8 @@ def _build_state() -> dict:
             "closed": metrics.closed_tasks,
             "agents_running": len(agents),
             "avg_completion": format_duration(metrics.avg_completion_time)
-            if metrics.avg_completion_time > 0 else "",
+            if metrics.avg_completion_time > 0
+            else "",
         },
         "tokens": {
             "input": cost_summary.total_input_tokens,
@@ -178,10 +200,9 @@ def _build_state() -> dict:
             "cache_write": cost_summary.total_cache_write_tokens,
             "output": cost_summary.total_output_tokens,
             "cost_usd": round(cost_summary.total_cost_usd, 4),
-            "session_cost_usd": round(sum(
-                e.cost_usd for e in cost_summary.entries
-                if e.timestamp >= _session_start
-            ), 4),
+            "session_cost_usd": round(
+                sum(e.cost_usd for e in cost_summary.entries if e.timestamp >= _session_start), 4
+            ),
             "by_model": {k: round(v, 4) for k, v in cost_summary.by_model.items()},
             "by_role": {k: round(v, 4) for k, v in cost_summary.by_role.items()},
             "budget": {
@@ -195,6 +216,10 @@ def _build_state() -> dict:
         "events": recent_events,
         "mcp_servers": list(mcp_servers.keys()),
     }
+
+    _last_state_hash = state_hash
+    _cached_state = result
+    return result
 
 
 app = FastAPI(title="Warchief Dashboard")
@@ -232,14 +257,16 @@ async def answer_task(task_id: str, body: ActionBody):
     if "question" not in task.labels:
         return {"error": f"Task '{task_id}' has no pending question"}
 
-    store.create_message(MessageRecord(
-        id="",
-        from_agent="user",
-        to_agent=task_id,
-        message_type="answer",
-        body=body.message,
-        persistent=True,
-    ))
+    store.create_message(
+        MessageRecord(
+            id="",
+            from_agent="user",
+            to_agent=task_id,
+            message_type="answer",
+            body=body.message,
+            persistent=True,
+        )
+    )
 
     granted_tools: list[str] = []
     if is_tool_grant(body.message):
@@ -253,12 +280,14 @@ async def answer_task(task_id: str, body: ActionBody):
     new_labels = [la for la in task.labels if la != "question"]
     store.update_task(task_id, status="open", labels=new_labels)
 
-    store.log_event(EventRecord(
-        event_type="answer",
-        task_id=task_id,
-        details={"answer": body.message, "granted_tools": granted_tools},
-        actor="user",
-    ))
+    store.log_event(
+        EventRecord(
+            event_type="answer",
+            task_id=task_id,
+            details={"answer": body.message, "granted_tools": granted_tools},
+            actor="user",
+        )
+    )
     return {"ok": True, "granted_tools": granted_tools}
 
 
@@ -284,20 +313,13 @@ async def drop_task(task_id: str):
             if agent.worktree_path:
                 try:
                     from warchief.worktree import remove_worktree
+
                     remove_worktree(_project_root, agent.id)
                 except Exception:
                     pass
 
-    # Force-update bypassing optimistic lock (watcher may be touching the same task)
-    store._conn.execute(
-        "UPDATE tasks SET status = 'closed', stage = NULL, assigned_agent = NULL, labels = '[]', updated_at = ? WHERE id = ?",
-        (time.time(), task_id),
-    )
-    store._conn.execute(
-        "DELETE FROM messages WHERE from_agent = ? OR to_agent = ?",
-        (task_id, task_id),
-    )
-    store._conn.commit()
+    store.update_task(task_id, status="closed", stage=None, assigned_agent=None, labels=[])
+    store.delete_task_messages(task_id)
     return {"ok": True}
 
 
@@ -322,6 +344,7 @@ async def grant_task(task_id: str, body: ActionBody):
 @app.post("/api/nudge/{task_id}")
 async def nudge_task(task_id: str, body: ActionBody):
     from warchief.control import _do_nudge
+
     try:
         _do_nudge(_project_root, task_id, body.message)
         return {"ok": True}
@@ -339,31 +362,45 @@ async def retry_task(task_id: str, body: ActionBody):
 
     # Store feedback
     if body.message:
-        store.create_message(MessageRecord(
-            id="", from_agent="user", to_agent=task_id,
-            message_type="feedback", body=body.message, persistent=True,
-        ))
+        store.create_message(
+            MessageRecord(
+                id="",
+                from_agent="user",
+                to_agent=task_id,
+                message_type="feedback",
+                body=body.message,
+                persistent=True,
+            )
+        )
 
     # Reset counters and reopen at development
     from warchief.state_machine import get_first_stage
+
     first_stage = "development"  # Always retry from dev, not planning
     store.update_task(
-        task_id, status="open", stage=first_stage,
-        assigned_agent=None, spawn_count=0, crash_count=0,
+        task_id,
+        status="open",
+        stage=first_stage,
+        assigned_agent=None,
+        spawn_count=0,
+        crash_count=0,
         labels=[f"stage:{first_stage}"],
     )
-    store.log_event(EventRecord(
-        event_type="retry",
-        task_id=task_id,
-        details={"feedback": body.message, "stage": first_stage},
-        actor="user",
-    ))
+    store.log_event(
+        EventRecord(
+            event_type="retry",
+            task_id=task_id,
+            details={"feedback": body.message, "stage": first_stage},
+            actor="user",
+        )
+    )
     return {"ok": True}
 
 
 @app.post("/api/tell/{task_id}")
 async def tell_task(task_id: str, body: ActionBody):
     from warchief.control import _do_tell
+
     try:
         _do_tell(_project_root, task_id, body.message)
         return {"ok": True}
@@ -411,21 +448,24 @@ async def list_agents():
         "SELECT * FROM agents ORDER BY spawned_at DESC LIMIT 50"
     ).fetchall()
     from warchief.task_store import _row_to_agent
+
     all_agents = [_row_to_agent(r) for r in all_agents_rows]
 
     now = time.time()
     result = []
     for a in all_agents:
         age = format_duration(now - a.spawned_at) if a.spawned_at else ""
-        result.append({
-            "id": a.id,
-            "role": a.role,
-            "status": a.status,
-            "task": a.current_task or "",
-            "model": a.model or "",
-            "age": age,
-            "spawned_at": a.spawned_at or 0,
-        })
+        result.append(
+            {
+                "id": a.id,
+                "role": a.role,
+                "status": a.status,
+                "task": a.current_task or "",
+                "model": a.model or "",
+                "age": age,
+                "spawned_at": a.spawned_at or 0,
+            }
+        )
     return result
 
 
@@ -447,6 +487,7 @@ async def get_agent_log(agent_id: str, lines: int = 200):
 async def approve_plan(task_id: str):
     """Approve a plan — advance task directly from planning to development."""
     from warchief.state_machine import get_next_stage
+
     store = _store()
     task = store.get_task(task_id)
     if not task:
@@ -454,8 +495,11 @@ async def approve_plan(task_id: str):
     next_stage = get_next_stage("planning", task.labels, task.type)
     if not next_stage:
         next_stage = "development"
-    new_labels = [l for l in task.labels
-                  if l not in ("needs-plan-approval", "plan-approved", f"stage:{task.stage}")]
+    new_labels = [
+        l
+        for l in task.labels
+        if l not in ("needs-plan-approval", "plan-approved", f"stage:{task.stage}")
+    ]
     new_labels.append(f"stage:{next_stage}")
     store.update_task(task_id, status="open", stage=next_stage, labels=new_labels)
     return {"ok": True, "next_stage": next_stage}
@@ -469,10 +513,16 @@ async def reject_plan(task_id: str, body: ActionBody):
     if not task:
         return {"error": f"Task '{task_id}' not found"}
     # Store feedback as message
-    store.create_message(MessageRecord(
-        id="", from_agent="user", to_agent=task_id,
-        message_type="feedback", body=body.message, persistent=True,
-    ))
+    store.create_message(
+        MessageRecord(
+            id="",
+            from_agent="user",
+            to_agent=task_id,
+            message_type="feedback",
+            body=body.message,
+            persistent=True,
+        )
+    )
     new_labels = [l for l in task.labels if l != "needs-plan-approval"] + ["rejected"]
     store.update_task(task_id, status="open", labels=new_labels)
     return {"ok": True}
@@ -485,11 +535,7 @@ async def approve_investigation(task_id: str):
     task = store.get_task(task_id)
     if not task:
         return {"error": f"Task '{task_id}' not found"}
-    store._conn.execute(
-        "UPDATE tasks SET status = 'closed', stage = NULL, updated_at = ? WHERE id = ?",
-        (time.time(), task_id),
-    )
-    store._conn.commit()
+    store.update_task(task_id, status="closed", stage=None)
     return {"ok": True}
 
 
@@ -500,10 +546,16 @@ async def reject_investigation(task_id: str, body: ActionBody):
     task = store.get_task(task_id)
     if not task:
         return {"error": f"Task '{task_id}' not found"}
-    store.create_message(MessageRecord(
-        id="", from_agent="user", to_agent=task_id,
-        message_type="feedback", body=body.message, persistent=True,
-    ))
+    store.create_message(
+        MessageRecord(
+            id="",
+            from_agent="user",
+            to_agent=task_id,
+            message_type="feedback",
+            body=body.message,
+            persistent=True,
+        )
+    )
     new_labels = [l for l in task.labels if l != "needs-review"] + ["rejected"]
     store.update_task(task_id, status="open", labels=new_labels)
     return {"ok": True}
@@ -597,11 +649,9 @@ async def decompose_task(task_id: str, body: DecomposeBody):
         created_ids.append(sub_id)
 
     if created_ids:
-        store._conn.execute(
-            "UPDATE tasks SET status = 'closed', stage = NULL, labels = '[\"decomposed\"]', group_id = ?, updated_at = ? WHERE id = ?",
-            (group_id, now, task_id),
+        store.update_task(
+            task_id, status="closed", stage=None, labels=["decomposed"], group_id=group_id
         )
-        store._conn.commit()
 
     return {"ok": True, "sub_tasks": created_ids}
 
@@ -634,6 +684,7 @@ async def start_watcher():
         try:
             pid = int(lock_path.read_text().strip())
             import os
+
             os.kill(pid, 0)
             return {"error": "Watcher already running", "pid": pid}
         except (ValueError, ProcessLookupError, PermissionError, OSError):
@@ -695,6 +746,7 @@ class ConfigUpdateBody(BaseModel):
 async def update_config(body: ConfigUpdateBody):
     """Update pipeline config (pause/unpause, budget limits)."""
     from warchief.config import read_config, write_config
+
     config = read_config(_project_root)
     changed = []
 
@@ -724,6 +776,7 @@ async def update_config(body: ConfigUpdateBody):
 async def unpause():
     """Quick unpause — convenience endpoint."""
     from warchief.config import read_config, write_config
+
     config = read_config(_project_root)
     config.paused = False
     write_config(_project_root, config)
@@ -755,6 +808,7 @@ async def get_scratchpad(task_id: str):
 async def get_agent_diff(path: str):
     """Get git diff for a file in an agent's worktree."""
     import subprocess
+
     safe_path = Path(path).resolve()
     worktrees_dir = (_project_root / ".warchief-worktrees").resolve()
     if not str(safe_path).startswith(str(worktrees_dir)):
@@ -770,14 +824,20 @@ async def get_agent_diff(path: str):
     try:
         result = subprocess.run(
             ["git", "diff", "HEAD", "--", rel_file],
-            cwd=str(wt_root), capture_output=True, text=True, timeout=10,
+            cwd=str(wt_root),
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         diff = result.stdout
         if not diff:
             # Maybe it's a new file — show entire content as addition
             result = subprocess.run(
                 ["git", "diff", "--no-index", "/dev/null", rel_file],
-                cwd=str(wt_root), capture_output=True, text=True, timeout=10,
+                cwd=str(wt_root),
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             diff = result.stdout
         if not diff and safe_path.exists():
@@ -791,6 +851,7 @@ async def get_agent_diff(path: str):
 async def get_agent_file(path: str):
     """Read a file from an agent's worktree. Only serves files under .warchief-worktrees/."""
     from pathlib import PurePosixPath
+
     safe_path = Path(path).resolve()
     worktrees_dir = (_project_root / ".warchief-worktrees").resolve()
     # Security: only serve files from worktrees directory
@@ -810,8 +871,6 @@ async def get_agent_file(path: str):
         return {"error": str(e)}
 
 
-
-
 @app.get("/api/tasks")
 async def list_all_tasks():
     """Get all tasks with full details for the tasks page."""
@@ -827,46 +886,53 @@ async def list_all_tasks():
         event_list = []
         for e in reversed(events):  # oldest first
             d = e.details or {}
-            event_list.append({
-                "type": e.event_type,
-                "agent": e.agent_id or "",
-                "from_stage": d.get("from_stage", ""),
-                "to_stage": d.get("to_stage", ""),
-                "reason": d.get("failure_reason", ""),
-                "comment": d.get("comment", ""),
-                "age": format_duration(now - e.created_at) if e.created_at else "",
-            })
+            event_list.append(
+                {
+                    "type": e.event_type,
+                    "agent": e.agent_id or "",
+                    "from_stage": d.get("from_stage", ""),
+                    "to_stage": d.get("to_stage", ""),
+                    "reason": d.get("failure_reason", ""),
+                    "comment": d.get("comment", ""),
+                    "age": format_duration(now - e.created_at) if e.created_at else "",
+                }
+            )
 
         msg_list = []
         for m in messages:
-            msg_list.append({
-                "type": m.message_type or "",
-                "body": m.body[:500] if m.body else "",
-                "from": m.from_agent or "",
-            })
+            msg_list.append(
+                {
+                    "type": m.message_type or "",
+                    "body": m.body[:500] if m.body else "",
+                    "from": m.from_agent or "",
+                }
+            )
 
         from warchief.cost_tracker import get_task_cost
+
         cost = get_task_cost(_project_root, t.id)
 
-        result.append({
-            "id": t.id,
-            "title": t.title,
-            "description": t.description or "",
-            "type": t.type,
-            "status": t.status,
-            "stage": t.stage or "",
-            "priority": t.priority,
-            "labels": t.labels,
-            "budget": t.budget,
-            "cost": round(cost, 4),
-            "rejections": t.rejection_count,
-            "spawns": t.spawn_count,
-            "crashes": t.crash_count,
-            "scratchpad": scratchpad_text[:1000] if scratchpad_text else "",
-            "events": event_list,
-            "messages": msg_list,
-            "created": format_duration(now - t.created_at) if t.created_at else "",
-        })
+        result.append(
+            {
+                "id": t.id,
+                "title": t.title,
+                "description": t.description or "",
+                "type": t.type,
+                "status": t.status,
+                "stage": t.stage or "",
+                "priority": t.priority,
+                "labels": t.labels,
+                "budget": t.budget,
+                "cost": round(cost, 4),
+                "rejections": t.rejection_count,
+                "spawns": t.spawn_count,
+                "crashes": t.crash_count,
+                "scratchpad": scratchpad_text[:1000] if scratchpad_text else "",
+                "events": event_list,
+                "messages": msg_list,
+                "created": format_duration(now - t.created_at) if t.created_at else "",
+            }
+        )
     return result
 
 
@@ -895,10 +961,13 @@ async def spa_catchall(path: str):
     index_path = _static_dir / "index.html"
     if index_path.exists():
         return HTMLResponse(content=index_path.read_text(), status_code=200)
-    return HTMLResponse(content="<h1>Dashboard not built. Run: cd warchief/web/frontend && npm run build</h1>", status_code=500)
+    return HTMLResponse(
+        content="<h1>Dashboard not built. Run: cd warchief/web/frontend && npm run build</h1>",
+        status_code=500,
+    )
 
 
-def run_server(project_root: Path, port: int = 8095) -> None:
+def run_server(project_root: Path, port: int = 8095, host: str = "127.0.0.1") -> None:
     """Start the uvicorn server.
 
     Only one web dashboard per project. If another is already running,
@@ -933,13 +1002,16 @@ def run_server(project_root: Path, port: int = 8095) -> None:
     for attempt in range(20):
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.bind(("0.0.0.0", port))
+            sock.bind((host, port))
             sock.close()
             break
         except OSError:
             port += 1
     else:
-        print(f"Error: Could not find an available port (tried {port - 20} to {port - 1})", file=__import__('sys').stderr)
+        print(
+            f"Error: Could not find an available port (tried {port - 20} to {port - 1})",
+            file=__import__("sys").stderr,
+        )
         lock_fd.close()
         return
 
@@ -952,10 +1024,11 @@ def run_server(project_root: Path, port: int = 8095) -> None:
     # Open browser after a short delay (so server is ready)
     import threading
     import webbrowser
+
     threading.Timer(1.0, webbrowser.open, args=[url]).start()
 
     try:
-        uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+        uvicorn.run(app, host=host, port=port, log_level="warning")
     finally:
         # Release lock on shutdown
         try:

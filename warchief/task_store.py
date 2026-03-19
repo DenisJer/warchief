@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -97,7 +98,9 @@ def _row_to_task(row: sqlite3.Row) -> TaskRecord:
         crash_count=row["crash_count"],
         priority=row["priority"],
         type=row["type"],
-        extra_tools=json.loads(row["extra_tools"]) if "extra_tools" in row.keys() and row["extra_tools"] else [],
+        extra_tools=json.loads(row["extra_tools"])
+        if "extra_tools" in row.keys() and row["extra_tools"]
+        else [],
         budget=float(row["budget"]) if "budget" in row.keys() and row["budget"] else 0.0,
         group_id=row["group_id"] if "group_id" in row.keys() else None,
         created_at=row["created_at"] or 0.0,
@@ -151,6 +154,7 @@ def _row_to_event(row: sqlite3.Row) -> EventRecord:
 class TaskStore:
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
+        self._lock = threading.Lock()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -188,32 +192,46 @@ class TaskStore:
     def create_task(self, task: TaskRecord) -> str:
         task_id = task.id if task.id else _generate_id()
         now = time.time()
-        self._conn.execute(
-            """INSERT INTO tasks
-               (id, title, description, status, stage, labels, deps,
-                assigned_agent, base_branch, rejection_count, spawn_count,
-                crash_count, priority, type, extra_tools, budget, group_id,
-                created_at, updated_at, version)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
-            (
-                task_id, task.title, task.description, task.status, task.stage,
-                json.dumps(task.labels), json.dumps(task.deps),
-                task.assigned_agent, task.base_branch,
-                task.rejection_count, task.spawn_count, task.crash_count,
-                task.priority, task.type, json.dumps(task.extra_tools),
-                task.budget, task.group_id, now, now,
-            ),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO tasks
+                   (id, title, description, status, stage, labels, deps,
+                    assigned_agent, base_branch, rejection_count, spawn_count,
+                    crash_count, priority, type, extra_tools, budget, group_id,
+                    created_at, updated_at, version)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+                (
+                    task_id,
+                    task.title,
+                    task.description,
+                    task.status,
+                    task.stage,
+                    json.dumps(task.labels),
+                    json.dumps(task.deps),
+                    task.assigned_agent,
+                    task.base_branch,
+                    task.rejection_count,
+                    task.spawn_count,
+                    task.crash_count,
+                    task.priority,
+                    task.type,
+                    json.dumps(task.extra_tools),
+                    task.budget,
+                    task.group_id,
+                    now,
+                    now,
+                ),
+            )
+            self._conn.commit()
         return task_id
 
     def get_task(self, task_id: str) -> TaskRecord | None:
-        row = self._conn.execute(
-            "SELECT * FROM tasks WHERE id = ?", (task_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         return _row_to_task(row) if row else None
 
-    def update_task(self, task_id: str, expected_version: int | None = None, **kwargs: object) -> bool:
+    def update_task(
+        self, task_id: str, expected_version: int | None = None, **kwargs: object
+    ) -> bool:
         """Update a task with optimistic locking.
 
         If *expected_version* is given, the UPDATE will include
@@ -225,45 +243,48 @@ class TaskStore:
         Returns ``True`` if the row was updated, ``False`` otherwise.
         """
         import logging
+
         _log = logging.getLogger("warchief.task_store")
 
-        if expected_version is None:
-            task = self.get_task(task_id)
-            if task is None:
+        with self._lock:
+            if expected_version is None:
+                task = self.get_task(task_id)
+                if task is None:
+                    return False
+                expected_version = task.version
+
+            sets: list[str] = []
+            params: list[object] = []
+
+            for key, value in kwargs.items():
+                if key == "version":
+                    continue
+                if key in ("labels", "deps", "extra_tools"):
+                    sets.append(f"{key} = ?")
+                    params.append(json.dumps(value))
+                else:
+                    sets.append(f"{key} = ?")
+                    params.append(value)
+
+            sets.append("updated_at = ?")
+            params.append(time.time())
+            sets.append("version = version + 1")
+
+            params.append(task_id)
+            params.append(expected_version)
+
+            sql = f"UPDATE tasks SET {', '.join(sets)} WHERE id = ? AND version = ?"
+            cursor = self._conn.execute(sql, params)
+            self._conn.commit()
+
+            if cursor.rowcount == 0:
+                _log.warning(
+                    "Optimistic lock failed for task %s (expected version %d)",
+                    task_id,
+                    expected_version,
+                )
                 return False
-            expected_version = task.version
-
-        sets: list[str] = []
-        params: list[object] = []
-
-        for key, value in kwargs.items():
-            if key == "version":
-                continue
-            if key in ("labels", "deps", "extra_tools"):
-                sets.append(f"{key} = ?")
-                params.append(json.dumps(value))
-            else:
-                sets.append(f"{key} = ?")
-                params.append(value)
-
-        sets.append("updated_at = ?")
-        params.append(time.time())
-        sets.append("version = version + 1")
-
-        params.append(task_id)
-        params.append(expected_version)
-
-        sql = f"UPDATE tasks SET {', '.join(sets)} WHERE id = ? AND version = ?"
-        cursor = self._conn.execute(sql, params)
-        self._conn.commit()
-
-        if cursor.rowcount == 0:
-            _log.warning(
-                "Optimistic lock failed for task %s (expected version %d)",
-                task_id, expected_version,
-            )
-            return False
-        return True
+            return True
 
     def list_tasks(
         self,
@@ -354,28 +375,32 @@ class TaskStore:
                 spawned_at, last_heartbeat, crash_count, total_tasks_completed)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                agent.id, agent.role, agent.status, agent.current_task,
-                agent.worktree_path, agent.pid, agent.model,
-                agent.spawned_at, agent.last_heartbeat,
-                agent.crash_count, agent.total_tasks_completed,
+                agent.id,
+                agent.role,
+                agent.status,
+                agent.current_task,
+                agent.worktree_path,
+                agent.pid,
+                agent.model,
+                agent.spawned_at,
+                agent.last_heartbeat,
+                agent.crash_count,
+                agent.total_tasks_completed,
             ),
         )
         self._conn.commit()
 
     def get_agent(self, agent_id: str) -> AgentRecord | None:
-        row = self._conn.execute(
-            "SELECT * FROM agents WHERE id = ?", (agent_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
         return _row_to_agent(row) if row else None
 
     def update_agent(self, agent_id: str, **kwargs: object) -> None:
         sets = [f"{k} = ?" for k in kwargs]
         params = list(kwargs.values())
         params.append(agent_id)
-        self._conn.execute(
-            f"UPDATE agents SET {', '.join(sets)} WHERE id = ?", params
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(f"UPDATE agents SET {', '.join(sets)} WHERE id = ?", params)
+            self._conn.commit()
 
     def get_running_agents(self) -> list[AgentRecord]:
         rows = self._conn.execute(
@@ -393,17 +418,23 @@ class TaskStore:
 
     def create_message(self, msg: MessageRecord) -> None:
         msg_id = msg.id if msg.id else f"msg-{uuid.uuid4().hex[:8]}"
-        self._conn.execute(
-            """INSERT INTO messages
-               (id, from_agent, to_agent, message_type, body, persistent, read_at, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                msg_id, msg.from_agent, msg.to_agent, msg.message_type,
-                msg.body, 1 if msg.persistent else 0, msg.read_at,
-                msg.created_at or time.time(),
-            ),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO messages
+                   (id, from_agent, to_agent, message_type, body, persistent, read_at, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    msg_id,
+                    msg.from_agent,
+                    msg.to_agent,
+                    msg.message_type,
+                    msg.body,
+                    1 if msg.persistent else 0,
+                    msg.read_at,
+                    msg.created_at or time.time(),
+                ),
+            )
+            self._conn.commit()
 
     def get_unread_mail(self, agent_id: str) -> list[MessageRecord]:
         rows = self._conn.execute(
@@ -440,6 +471,26 @@ class TaskStore:
             ).fetchall()
         return [_row_to_message(r) for r in rows]
 
+    def get_all_messages_by_task(self) -> dict[str, list[MessageRecord]]:
+        """Load all messages grouped by task (from_agent or to_agent)."""
+        rows = self._conn.execute("SELECT * FROM messages ORDER BY created_at DESC").fetchall()
+        by_task: dict[str, list[MessageRecord]] = {}
+        for row in rows:
+            msg = _row_to_message(row)
+            for task_id in (msg.from_agent, msg.to_agent):
+                if task_id:
+                    by_task.setdefault(task_id, []).append(msg)
+        return by_task
+
+    def delete_task_messages(self, task_id: str) -> None:
+        """Delete all messages associated with a task."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM messages WHERE from_agent = ? OR to_agent = ?",
+                (task_id, task_id),
+            )
+            self._conn.commit()
+
     def mark_read(self, message_id: str) -> None:
         self._conn.execute(
             "UPDATE messages SET read_at = ? WHERE id = ?",
@@ -450,20 +501,22 @@ class TaskStore:
     # ── Events ─────────────────────────────────────────────────
 
     def log_event(self, event: EventRecord) -> None:
-        self._conn.execute(
-            """INSERT INTO events (task_id, agent_id, event_type, details, actor, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (
-                event.task_id, event.agent_id, event.event_type,
-                json.dumps(event.details), event.actor,
-                event.created_at or time.time(),
-            ),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO events (task_id, agent_id, event_type, details, actor, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    event.task_id,
+                    event.agent_id,
+                    event.event_type,
+                    json.dumps(event.details),
+                    event.actor,
+                    event.created_at or time.time(),
+                ),
+            )
+            self._conn.commit()
 
-    def get_events(
-        self, task_id: str | None = None, limit: int = 100
-    ) -> list[EventRecord]:
+    def get_events(self, task_id: str | None = None, limit: int = 100) -> list[EventRecord]:
         if task_id:
             rows = self._conn.execute(
                 "SELECT * FROM events WHERE task_id = ? ORDER BY created_at DESC LIMIT ?",
