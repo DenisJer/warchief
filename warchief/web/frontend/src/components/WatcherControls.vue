@@ -8,10 +8,13 @@ const busy = ref(false)
 const showCreate = ref(false)
 
 async function toggle() {
+  if (busy.value) return
   busy.value = true
   try {
-    if (store.watcherRunning) await store.apiPost('/api/watcher/stop')
-    else await store.apiPost('/api/watcher/start')
+    const url = store.watcherRunning ? '/api/watcher/stop' : '/api/watcher/start'
+    console.log('WatcherControls: toggle', url, 'watcherRunning=', store.watcherRunning)
+    const result = await store.apiPost(url)
+    console.log('WatcherControls: result', result)
   } finally {
     busy.value = false
   }

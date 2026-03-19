@@ -923,6 +923,7 @@ async def list_all_tasks():
                 "priority": t.priority,
                 "labels": t.labels,
                 "budget": t.budget,
+                "group_id": t.group_id or "",
                 "cost": round(cost, 4),
                 "rejections": t.rejection_count,
                 "spawns": t.spawn_count,

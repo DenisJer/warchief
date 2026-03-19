@@ -153,6 +153,12 @@ def cmd_version(_args: argparse.Namespace) -> None:
 
 
 def cmd_init(_args: argparse.Namespace) -> None:
+    # Write .gitignore BEFORE creating .warchief/ so the directory
+    # is never tracked by git (git add . would pick it up otherwise)
+    gitignore = Path.cwd() / ".gitignore"
+    had_gitignore = gitignore.exists()
+    _ensure_gitignore(Path.cwd())
+
     root = _warchief_root()
     root.mkdir(parents=True, exist_ok=True)
 
@@ -166,11 +172,6 @@ def cmd_init(_args: argparse.Namespace) -> None:
 
     store = TaskStore(_db_path())
     store.close()
-
-    # Ensure .gitignore has warchief/tool entries
-    gitignore = Path.cwd() / ".gitignore"
-    had_gitignore = gitignore.exists()
-    _ensure_gitignore(Path.cwd())
 
     print(f"Warchief initialized in {root}")
     print(f"  Database : {_db_path()}")

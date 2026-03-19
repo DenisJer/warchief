@@ -16,6 +16,8 @@ except ImportError:
 # Hardcoded fallbacks — used when pipeline TOML files are not found
 _DEFAULT_STAGES = [
     "investigation",
+    "challenge",
+    "consolidation",
     "planning",
     "development",
     "testing",
