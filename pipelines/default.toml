@@ -5,14 +5,15 @@ description = "Standard development pipeline: plan -> develop -> test -> review 
 [stages]
 planning = { role = "planner", priority = 8 }
 development = { role = "developer", priority = 6 }
-testing = { role = "tester", priority = 5 }
-reviewing = { role = "reviewer", priority = 4 }
-security-review = { role = "security_reviewer", priority = 3, requires_label = "security" }
-pr-creation = { role = "pr_creator", priority = 2 }
+challenge = { role = "challenger", priority = 5 }
+testing = { role = "tester", priority = 4 }
+reviewing = { role = "reviewer", priority = 3 }
+security-review = { role = "security_reviewer", priority = 2, requires_label = "security" }
+pr-creation = { role = "pr_creator", priority = 1 }
 
 [pipelines]
-feature = ["planning", "development", "testing", "reviewing", "security-review", "pr-creation"]
-bug = ["development", "testing", "reviewing", "pr-creation"]
+feature = ["planning", "development", "challenge", "testing", "reviewing", "security-review", "pr-creation"]
+bug = ["development", "challenge", "testing", "reviewing", "pr-creation"]
 
 [routing]
 security = { insert_stage = "security-review", after = "reviewing" }

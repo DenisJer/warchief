@@ -29,6 +29,7 @@ _DEFAULT_STAGES = [
 _DEFAULT_STAGE_TO_ROLE: dict[str, str] = {
     "planning": "planner",
     "development": "developer",
+    "challenge": "challenger",
     "reviewing": "reviewer",
     "security-review": "security_reviewer",
     "testing": "tester",
@@ -41,13 +42,14 @@ _DEFAULT_STAGE_TO_ROLE: dict[str, str] = {
 _DEFAULT_PIPELINE_FEATURE = [
     "planning",
     "development",
+    "challenge",
     "testing",
     "reviewing",
     "security-review",
     "pr-creation",
 ]
-_DEFAULT_PIPELINE_BUG = ["development", "testing", "reviewing", "pr-creation"]
-_DEFAULT_PIPELINE_INVESTIGATION = ["investigation"]
+_DEFAULT_PIPELINE_BUG = ["development", "challenge", "testing", "reviewing", "pr-creation"]
+_DEFAULT_PIPELINE_INVESTIGATION = ["investigation", "challenge"]
 
 _DEFAULT_TYPE_TO_PIPELINE: dict[str, list[str]] = {
     "feature": _DEFAULT_PIPELINE_FEATURE,

@@ -10,8 +10,11 @@ const autoFollow = ref(true)
 const userScrolledUp = ref(false)
 const showHistory = ref(false)
 const logEl = ref(null)
+const isStreaming = ref(false)
 let pollTimer = null
 let lastLogHash = ''
+let logWs = null
+const MAX_LOG_LINES = 2000
 
 // File/diff viewer
 const viewerOpen = ref(false)
@@ -45,10 +48,72 @@ async function loadLog() {
   }
 }
 
+function disconnectLogWs() {
+  if (logWs) {
+    logWs.close()
+    logWs = null
+  }
+  isStreaming.value = false
+}
+
+function connectLogWs(agentId) {
+  disconnectLogWs()
+
+  // Check if agent is alive — only stream for live agents
+  const agent = agents.value.find(a => a.id === agentId)
+  if (!agent || (agent.status !== 'alive' && agent.status !== 'zombie')) {
+    // Dead agent — use HTTP polling
+    loadLog()
+    return
+  }
+
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const wsUrl = `${proto}//${window.location.host}/ws/agent-log/${encodeURIComponent(agentId)}`
+  logWs = new WebSocket(wsUrl)
+  isStreaming.value = true
+
+  logWs.onmessage = async (event) => {
+    try {
+      const msg = JSON.parse(event.data)
+      if (msg.type === 'initial') {
+        logLines.value = msg.lines || []
+      } else if (msg.type === 'append') {
+        const newLines = msg.lines || []
+        logLines.value = logLines.value.concat(newLines)
+        // Cap at MAX_LOG_LINES to prevent memory bloat
+        if (logLines.value.length > MAX_LOG_LINES) {
+          logLines.value = logLines.value.slice(-MAX_LOG_LINES)
+        }
+      } else if (msg.type === 'done') {
+        disconnectLogWs()
+        return
+      }
+      if (autoFollow.value) {
+        await nextTick()
+        if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
+  }
+
+  logWs.onerror = () => {
+    disconnectLogWs()
+    // Fall back to HTTP polling
+    loadLog()
+  }
+
+  logWs.onclose = () => {
+    isStreaming.value = false
+    logWs = null
+  }
+}
+
 function selectAgent(id) {
   selectedAgent.value = id
   lastLogHash = ''
-  loadLog()
+  logLines.value = []
+  connectLogWs(id)
 }
 
 function logColor(line) {
@@ -118,9 +183,16 @@ function onLogScroll() {
 onMounted(() => {
   if (window.location.hash) selectedAgent.value = window.location.hash.substring(1)
   loadAgents()
-  pollTimer = setInterval(() => { loadAgents(); if (selectedAgent.value) loadLog() }, 3000)
+  pollTimer = setInterval(() => {
+    loadAgents()
+    // Only HTTP-poll log for dead agents (live agents use WebSocket)
+    if (selectedAgent.value && !isStreaming.value) loadLog()
+  }, 3000)
 })
-onUnmounted(() => clearInterval(pollTimer))
+onUnmounted(() => {
+  clearInterval(pollTimer)
+  disconnectLogWs()
+})
 </script>
 
 <template>
@@ -135,7 +207,7 @@ onUnmounted(() => clearInterval(pollTimer))
       <div v-if="!active.length" class="empty-section">No active agents</div>
 
       <div class="section-header" @click="showHistory = !showHistory" style="cursor:pointer">
-        {{ showHistory ? '▼' : '▶' }} History ({{ history.length }})
+        {{ showHistory ? '\u25BC' : '\u25B6' }} History ({{ history.length }})
       </div>
       <template v-if="showHistory">
         <div v-for="a in history" :key="a.id" :class="['agent-item', { selected: a.id === selectedAgent }]"
@@ -148,7 +220,7 @@ onUnmounted(() => clearInterval(pollTimer))
 
     <div class="log-panel">
       <div class="log-header">
-        <span>{{ selectedAgent || 'Select an agent' }}</span>
+        <span>{{ selectedAgent || 'Select an agent' }}<span v-if="isStreaming" class="stream-badge">LIVE</span></span>
         <div class="log-controls">
           <button :class="['ctrl-btn', { active: autoFollow }]" @click="autoFollow = !autoFollow">Auto-follow</button>
         </div>
@@ -193,6 +265,8 @@ onUnmounted(() => clearInterval(pollTimer))
 .ctrl-btn { background: #2a2a4a; border: 1px solid #444; color: #ccc; padding: 2px 8px; border-radius: 3px; font-size: 10px; cursor: pointer; }
 .ctrl-btn.active { border-color: #82e0aa; color: #82e0aa; }
 .log-content { flex: 1; overflow-y: auto; padding: 10px 14px; font-family: 'SF Mono', Consolas, monospace; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; background: #0a0a1a; margin: 0; }
+.stream-badge { display: inline-block; background: #82e0aa; color: #0a0a1a; font-size: 9px; font-weight: bold; padding: 1px 5px; border-radius: 3px; margin-left: 8px; vertical-align: middle; animation: pulse 2s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 /* Overlay */
 .overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 100; display: flex; align-items: center; justify-content: center; }

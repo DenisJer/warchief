@@ -15,9 +15,12 @@ from warchief.state_machine import (
 
 
 class TestGetNextStage:
-    def test_development_to_testing(self):
-        # Testing before reviewing in new pipeline order
-        assert get_next_stage("development", []) == "testing"
+    def test_development_to_challenge(self):
+        # Challenge step after development
+        assert get_next_stage("development", []) == "challenge"
+
+    def test_challenge_to_testing(self):
+        assert get_next_stage("challenge", []) == "testing"
 
     def test_testing_to_reviewing(self):
         assert get_next_stage("testing", []) == "reviewing"
@@ -38,7 +41,7 @@ class TestGetNextStage:
         assert get_next_stage("nonexistent", []) is None
 
     def test_bug_skips_planning(self):
-        assert get_next_stage("development", [], task_type="bug") == "testing"
+        assert get_next_stage("development", [], task_type="bug") == "challenge"
 
     def test_feature_starts_with_planning(self):
         from warchief.state_machine import get_first_stage
@@ -171,7 +174,7 @@ class TestBlocked:
 
 
 class TestDevelopment:
-    def test_success_advances_to_testing(self):
+    def test_success_advances_to_challenge(self):
         r = dispatch_transition(
             task_status="open",
             task_stage="development",
@@ -180,8 +183,8 @@ class TestDevelopment:
             branch_has_commits=True,
         )
         assert r.status == "open"
-        assert r.next_stage == "testing"
-        assert "stage:testing" in r.add_labels
+        assert r.next_stage == "challenge"
+        assert "stage:challenge" in r.add_labels
         assert "stage:development" in r.remove_labels
 
     def test_no_commits_stays(self):
@@ -227,7 +230,7 @@ class TestDevelopment:
             branch_has_commits=True,
         )
         assert r.status == "open"
-        assert r.next_stage == "testing"
+        assert r.next_stage == "challenge"
 
     def test_no_commits_after_3_spawns_blocks(self):
         r = dispatch_transition(

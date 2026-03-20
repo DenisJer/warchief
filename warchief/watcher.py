@@ -132,8 +132,8 @@ class Watcher:
         from warchief.worktree import list_worktrees
 
         worktree_ids = list_worktrees(self.project_root)
-        all_agents = self.store._conn.execute("SELECT id, pid, status FROM agents").fetchall()
-        agent_pids = {row[0]: row[1] for row in all_agents}
+        all_agents = self.store.list_all_agents(limit=500)
+        agent_pids = {a.id: a.pid for a in all_agents}
 
         removed = 0
         for wt_id in worktree_ids:
@@ -153,10 +153,9 @@ class Watcher:
                     pass
 
         # 2. Mark agents as dead ONLY if their process is actually dead
-        alive_agents = self.store._conn.execute(
-            "SELECT id, pid FROM agents WHERE status IN ('alive', 'zombie')"
-        ).fetchall()
-        for agent_id, pid in alive_agents:
+        alive_agents = self.store.get_agents_by_status("alive", "zombie")
+        for agent in alive_agents:
+            agent_id, pid = agent.id, agent.pid
             process_alive = False
             if pid:
                 try:
@@ -165,19 +164,16 @@ class Watcher:
                 except (ProcessLookupError, PermissionError, OSError):
                     pass
             if not process_alive:
-                self.store._conn.execute(
-                    "UPDATE agents SET status = 'dead' WHERE id = ?", (agent_id,)
-                )
+                self.store.update_agent(agent_id, status="dead")
                 log.info("Startup: marked agent %s as dead (PID %s not alive)", agent_id, pid)
             else:
                 log.info("Startup: agent %s still alive (PID %s), keeping", agent_id, pid)
-        self.store._conn.commit()
 
         # 3. Reset any in_progress tasks (orphaned from previous session)
-        orphans = self.store._conn.execute(
-            "SELECT id FROM tasks WHERE status = 'in_progress'"
-        ).fetchall()
-        for (tid,) in orphans:
+        orphan_tasks = self.store.list_tasks(status="in_progress")
+        orphans = orphan_tasks
+        for task in orphan_tasks:
+            tid = task.id
             self.store.update_task(tid, status="open", assigned_agent=None)
 
         # 4. Prune git worktrees
@@ -1161,11 +1157,8 @@ class Watcher:
         from warchief.worktree import list_worktrees
 
         worktree_ids = list_worktrees(self.project_root)
-        agents_rows = self.store._conn.execute(
-            "SELECT id, worktree_path FROM agents WHERE current_task = ?",
-            (task.id,),
-        ).fetchall()
-        task_agent_ids = {row[0] for row in agents_rows}
+        task_agents = self.store.get_agents_for_task(task.id)
+        task_agent_ids = {a.id for a in task_agents}
 
         for wt_id in worktree_ids:
             if wt_id in task_agent_ids:
@@ -1280,6 +1273,9 @@ class Watcher:
         )
 
         # Save session ID per task for potential resume on rejection
+        # Only save if the agent actually did work (non-zero tokens) — crashed
+        # agents with 0 tokens produce broken sessions that cause resume loops
+        total_tokens = usage.input_tokens + usage.output_tokens + usage.cache_read_tokens
         session_id = data.get("session_id", "")
         if not session_id:
             session_file = self.project_root / ".warchief" / "agent-logs" / f"{agent.id}.session"
@@ -1288,7 +1284,7 @@ class Watcher:
                     session_id = session_file.read_text().strip()
                 except OSError:
                     pass
-        if session_id and agent.current_task:
+        if session_id and agent.current_task and total_tokens > 0:
             session_path = (
                 self.project_root
                 / ".warchief"
@@ -1776,7 +1772,7 @@ class Watcher:
                     task_stage=task.stage or "",
                     task_labels=task.labels,
                     agent_role=agent.role,
-                    agent_exit_code=0,
+                    agent_exit_code=1,
                     branch_has_commits=self._branch_has_commits(task),
                     rejection_count=task.rejection_count,
                     crash_count=task.crash_count,

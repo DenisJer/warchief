@@ -11,7 +11,12 @@ import time
 import uuid
 from pathlib import Path
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import version as _get_version
+
+    __version__ = _get_version("warchief-orchestrator")
+except Exception:
+    __version__ = "0.0.0-dev"
 
 WARCHIEF_DIR = ".warchief"
 DB_NAME = "warchief.db"
@@ -1016,11 +1021,7 @@ def cmd_drop(args: argparse.Namespace) -> None:
                 continue
 
     # Remove messages for this task
-    store._conn.execute(
-        "DELETE FROM messages WHERE from_agent = ? OR to_agent = ?",
-        (task.id, task.id),
-    )
-    store._conn.commit()
+    store.delete_task_messages(task.id)
     store.close()
 
     # Clean up scratchpad
@@ -1105,38 +1106,22 @@ def cmd_purge(args: argparse.Namespace) -> None:
     # Remove closed tasks (unless --keep-closed)
     if not args.keep_closed:
         tasks = store.list_tasks()
-        for t in tasks:
-            if t.status == "closed":
-                store._conn.execute("DELETE FROM tasks WHERE id = ?", (t.id,))
-                removed_tasks += 1
+        closed_ids = [t.id for t in tasks if t.status == "closed"]
+        removed_tasks = store.delete_tasks_by_ids(closed_ids)
 
     # Remove dead/zombie agents
-    agents = store._conn.execute(
-        "SELECT id FROM agents WHERE status IN ('dead', 'zombie')"
-    ).fetchall()
-    for (aid,) in agents:
-        store._conn.execute("DELETE FROM agents WHERE id = ?", (aid,))
-        removed_agents += 1
+    removed_agents = store.delete_agents_by_status("dead", "zombie")
 
     # Trim events to last N
-    total_events = store._conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
-    if total_events > keep_events:
-        store._conn.execute(
-            """DELETE FROM events WHERE id NOT IN (
-                SELECT id FROM events ORDER BY created_at DESC LIMIT ?
-            )""",
-            (keep_events,),
-        )
-        removed_events = total_events - keep_events
+    removed_events = store.trim_events(keep_events)
 
-    store._conn.commit()
     store.close()
 
     # Clean up agent log files for agents that no longer exist
     logs_dir = _warchief_root() / "agent-logs"
     if logs_dir.exists():
         active_store = _get_store()
-        all_agents = {r[0] for r in active_store._conn.execute("SELECT id FROM agents").fetchall()}
+        all_agents = active_store.list_agent_ids()
         active_store.close()
         for log_file in logs_dir.glob("*.log"):
             if log_file.stem not in all_agents:

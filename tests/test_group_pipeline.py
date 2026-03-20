@@ -262,7 +262,7 @@ class TestGroupDevGate:
         # Lead is wc-g1 (highest priority)
         lead = store.get_task("wc-g1")
         assert lead.status != "closed"
-        assert lead.stage in ("testing", "reviewing")  # advanced past development
+        assert lead.stage in ("challenge", "testing", "reviewing")  # advanced past development
         assert "group-waiting" not in lead.labels
 
         # Non-lead sibling is closed

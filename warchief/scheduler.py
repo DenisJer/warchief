@@ -122,28 +122,12 @@ class Scheduler:
         import uuid
 
         ctx_id = f"sched-{uuid.uuid4().hex[:8]}"
-        now = time.time()
-        self.store._conn.execute(
-            """INSERT INTO schedule_contexts (id, task_id, role, status, created_at)
-               VALUES (?, ?, ?, 'pending', ?)""",
-            (ctx_id, task_id, role, now),
-        )
-        self.store._conn.commit()
+        self.store.create_schedule_context(ctx_id, task_id, role)
         log.info("Created schedule context %s for task %s (%s)", ctx_id, task_id, role)
         return ctx_id
 
     def _get_pending_contexts(self) -> list[dict]:
-        rows = self.store._conn.execute(
-            """SELECT id, task_id, role FROM schedule_contexts
-               WHERE status = 'pending'
-               ORDER BY created_at ASC"""
-        ).fetchall()
-        return [{"id": r["id"], "task_id": r["task_id"], "role": r["role"]} for r in rows]
+        return self.store.get_pending_schedule_contexts()
 
     def _mark_context(self, ctx_id: str, status: str) -> None:
-        now = time.time()
-        self.store._conn.execute(
-            "UPDATE schedule_contexts SET status = ?, dispatched_at = ? WHERE id = ?",
-            (status, now, ctx_id),
-        )
-        self.store._conn.commit()
+        self.store.update_schedule_context(ctx_id, status)

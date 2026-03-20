@@ -157,8 +157,10 @@ def build_prime_context(
         import subprocess
 
         try:
+            from warchief.config import detect_default_branch
+
             branch = f"feature/{task.group_id}" if task.group_id else f"feature/{task.id}"
-            base = "main"
+            base = detect_default_branch(project_root)
             result = subprocess.run(
                 ["git", "diff", "--stat", f"{base}...{branch}"],
                 cwd=str(project_root),

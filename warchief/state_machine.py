@@ -133,6 +133,10 @@ def dispatch_transition(
             task_type,
         )
 
+    # --- CHALLENGE stage ---
+    if task_stage == "challenge":
+        return _handle_challenge(task_status, task_labels, stage_label, has_rejected, task_type)
+
     # --- REVIEWING stage ---
     if task_stage == "reviewing":
         return _handle_reviewing(task_status, task_labels, stage_label, has_rejected, task_type)
@@ -197,6 +201,43 @@ def _handle_planning(
         )
 
     return TransitionResult()
+
+
+def _handle_challenge(
+    task_status: str,
+    task_labels: list[str],
+    stage_label: str | None,
+    has_rejected: bool,
+    task_type: str = "feature",
+) -> TransitionResult:
+    """Challenge stage — stress-tests code or findings before proceeding.
+
+    On rejection: sends task back to development (or investigation) for fixes.
+    On approval: advances to the next stage (testing or consolidation).
+    """
+    is_open = task_status in ("open", "closed")
+    if not is_open:
+        return TransitionResult()
+
+    if has_rejected:
+        # Challenger found issues — send back to development
+        # For investigation tasks, send back to investigation
+        back_stage = "investigation" if task_type == "investigation" else "development"
+        return TransitionResult(
+            status="open",
+            remove_labels=["rejected", stage_label] if stage_label else ["rejected"],
+            add_labels=[f"stage:{back_stage}"],
+            next_stage=back_stage,
+        )
+
+    # Challenger approved — advance to next stage
+    next_stage = get_next_stage("challenge", task_labels, task_type)
+    return TransitionResult(
+        status="open",
+        remove_labels=[stage_label] if stage_label else [],
+        add_labels=[f"stage:{next_stage}"] if next_stage else [],
+        next_stage=next_stage,
+    )
 
 
 def _handle_development(

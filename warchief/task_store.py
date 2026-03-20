@@ -414,6 +414,79 @@ class TaskStore:
         ).fetchall()
         return [_row_to_agent(r) for r in rows]
 
+    def list_all_agents(self, limit: int = 50) -> list[AgentRecord]:
+        """Return all agents ordered by spawn time (newest first)."""
+        rows = self._conn.execute(
+            "SELECT * FROM agents ORDER BY spawned_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [_row_to_agent(r) for r in rows]
+
+    def get_agents_by_status(self, *statuses: str) -> list[AgentRecord]:
+        """Return agents matching any of the given statuses."""
+        placeholders = ",".join("?" for _ in statuses)
+        rows = self._conn.execute(
+            f"SELECT * FROM agents WHERE status IN ({placeholders})", statuses
+        ).fetchall()
+        return [_row_to_agent(r) for r in rows]
+
+    def mark_agents_dead(self, agent_ids: list[str]) -> None:
+        """Mark multiple agents as dead in a single transaction."""
+        if not agent_ids:
+            return
+        with self._lock:
+            for aid in agent_ids:
+                self._conn.execute("UPDATE agents SET status = 'dead' WHERE id = ?", (aid,))
+            self._conn.commit()
+
+    def get_agents_for_task(self, task_id: str) -> list[AgentRecord]:
+        """Return all agents assigned to a given task."""
+        rows = self._conn.execute(
+            "SELECT * FROM agents WHERE current_task = ?", (task_id,)
+        ).fetchall()
+        return [_row_to_agent(r) for r in rows]
+
+    def delete_agents_by_status(self, *statuses: str) -> int:
+        """Delete agents matching any of the given statuses. Returns count deleted."""
+        placeholders = ",".join("?" for _ in statuses)
+        with self._lock:
+            cursor = self._conn.execute(
+                f"DELETE FROM agents WHERE status IN ({placeholders})", statuses
+            )
+            self._conn.commit()
+        return cursor.rowcount
+
+    def list_agent_ids(self) -> set[str]:
+        """Return the set of all agent IDs."""
+        rows = self._conn.execute("SELECT id FROM agents").fetchall()
+        return {r[0] for r in rows}
+
+    def delete_tasks_by_ids(self, task_ids: list[str]) -> int:
+        """Delete tasks by their IDs. Returns count deleted."""
+        if not task_ids:
+            return 0
+        with self._lock:
+            deleted = 0
+            for tid in task_ids:
+                cursor = self._conn.execute("DELETE FROM tasks WHERE id = ?", (tid,))
+                deleted += cursor.rowcount
+            self._conn.commit()
+        return deleted
+
+    def trim_events(self, keep: int) -> int:
+        """Keep only the most recent *keep* events, delete older ones. Returns count deleted."""
+        with self._lock:
+            total = self._conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            if total <= keep:
+                return 0
+            self._conn.execute(
+                """DELETE FROM events WHERE id NOT IN (
+                    SELECT id FROM events ORDER BY created_at DESC LIMIT ?
+                )""",
+                (keep,),
+            )
+            self._conn.commit()
+        return total - keep
+
     # ── Messages ───────────────────────────────────────────────
 
     def create_message(self, msg: MessageRecord) -> None:
@@ -515,6 +588,40 @@ class TaskStore:
                 ),
             )
             self._conn.commit()
+
+    # ── Schedule Contexts ───────────────────────────────────────
+
+    def create_schedule_context(self, ctx_id: str, task_id: str, role: str) -> None:
+        """Insert a new schedule_context with status 'pending'."""
+        now = time.time()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO schedule_contexts (id, task_id, role, status, created_at)
+                   VALUES (?, ?, ?, 'pending', ?)""",
+                (ctx_id, task_id, role, now),
+            )
+            self._conn.commit()
+
+    def get_pending_schedule_contexts(self) -> list[dict]:
+        """Return all pending schedule contexts ordered by creation time."""
+        rows = self._conn.execute(
+            """SELECT id, task_id, role FROM schedule_contexts
+               WHERE status = 'pending'
+               ORDER BY created_at ASC"""
+        ).fetchall()
+        return [{"id": r["id"], "task_id": r["task_id"], "role": r["role"]} for r in rows]
+
+    def update_schedule_context(self, ctx_id: str, status: str) -> None:
+        """Update a schedule_context status and set dispatched_at."""
+        now = time.time()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE schedule_contexts SET status = ?, dispatched_at = ? WHERE id = ?",
+                (status, now, ctx_id),
+            )
+            self._conn.commit()
+
+    # ── Events ─────────────────────────────────────────────────
 
     def get_events(self, task_id: str | None = None, limit: int = 100) -> list[EventRecord]:
         if task_id:

@@ -67,11 +67,7 @@ class TestPipelineMetrics:
             )
         )
         # Need to manually set closed_at since create_task overrides created_at
-        store._conn.execute(
-            "UPDATE tasks SET closed_at = ?, created_at = ? WHERE id = ?",
-            (now, now - 100, "wc-fast"),
-        )
-        store._conn.commit()
+        store.update_task("wc-fast", closed_at=now, created_at=now - 100)
 
         m = compute_pipeline_metrics(store)
         assert m.avg_completion_time > 0

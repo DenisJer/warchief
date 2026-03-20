@@ -54,7 +54,10 @@ def _build_state() -> dict:
 
     # Quick change check — skip rebuild if nothing changed
     state_hash = str(max((t.updated_at or 0 for t in tasks), default=0)) + str(len(tasks))
-    state_hash += str(len(agents))
+    state_hash += "|" + ",".join(a.id + ":" + a.status for a in sorted(agents, key=lambda a: a.id))
+    # Include watcher lock existence so stop/start updates immediately
+    watcher_lock = _project_root / ".warchief" / "watcher.lock"
+    state_hash += "|watcher:" + str(watcher_lock.exists())
     if state_hash == _last_state_hash and _cached_state is not None:
         return _cached_state
 
@@ -373,18 +376,18 @@ async def retry_task(task_id: str, body: ActionBody):
             )
         )
 
-    # Reset counters and reopen at development
-    from warchief.state_machine import get_first_stage
-
-    first_stage = "development"  # Always retry from dev, not planning
+    # Retry at current stage for late-pipeline failures (pr-creation, security-review)
+    # Retry from development for earlier stages (where code changes are needed)
+    late_stages = {"pr-creation", "security-review"}
+    retry_stage = task.stage if task.stage in late_stages else "development"
     store.update_task(
         task_id,
         status="open",
-        stage=first_stage,
+        stage=retry_stage,
         assigned_agent=None,
         spawn_count=0,
         crash_count=0,
-        labels=[f"stage:{first_stage}"],
+        labels=[f"stage:{retry_stage}"],
     )
     store.log_event(
         EventRecord(
@@ -442,14 +445,8 @@ async def create_task(body: CreateTaskBody):
 async def list_agents():
     """List all agents with metadata for the agents page."""
     store = _store()
-    agents = store.get_running_agents()
-    # Also get recently dead agents from DB
-    all_agents_rows = store._conn.execute(
-        "SELECT * FROM agents ORDER BY spawned_at DESC LIMIT 50"
-    ).fetchall()
-    from warchief.task_store import _row_to_agent
-
-    all_agents = [_row_to_agent(r) for r in all_agents_rows]
+    # Get all agents (alive + dead) for the agents page
+    all_agents = store.list_all_agents(limit=50)
 
     now = time.time()
     result = []
@@ -596,11 +593,7 @@ async def escalate_investigation(task_id: str):
     store.create_task(record)
 
     # Close the investigation task
-    store._conn.execute(
-        "UPDATE tasks SET status = 'closed', stage = NULL, updated_at = ? WHERE id = ?",
-        (now, task_id),
-    )
-    store._conn.commit()
+    store.update_task(task_id, status="closed", stage=None)
     return {"ok": True, "conductor_task_id": conductor_id}
 
 
@@ -730,8 +723,11 @@ async def increase_budget(task_id: str, body: ActionBody):
         amount = float(body.message) if body.message else 2.0
     except ValueError:
         amount = 2.0
-    new_budget = task.budget + amount
-    new_labels = [l for l in task.labels if l != "budget-exceeded"]
+    # If task budget is 0 (using config default), start from the config default
+    config = read_config(_project_root)
+    effective_budget = task.budget if task.budget > 0 else config.budget.per_task_default
+    new_budget = effective_budget + amount
+    new_labels = [la for la in task.labels if la != "budget-exceeded"]
     store.update_task(task_id, status="open", budget=new_budget, labels=new_labels)
     return {"ok": True, "new_budget": new_budget}
 
@@ -945,6 +941,73 @@ async def websocket_endpoint(ws: WebSocket):
             state = _build_state()
             await ws.send_json(state)
             await asyncio.sleep(2)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
+
+@app.websocket("/ws/agent-log/{agent_id}")
+async def agent_log_stream(ws: WebSocket, agent_id: str):
+    """Stream live agent log output via WebSocket.
+
+    Sends last 200 lines as initial payload, then tails
+    the file for new content every 300ms.
+    """
+    await ws.accept()
+    log_path = _project_root / ".warchief" / "agent-logs" / f"{agent_id}.log"
+    alive_check_counter = 0
+
+    try:
+        # Wait briefly for log file to appear (agent may be starting)
+        for _ in range(10):
+            if log_path.exists():
+                break
+            await asyncio.sleep(0.5)
+
+        if not log_path.exists():
+            await ws.send_json({"type": "initial", "lines": []})
+            await ws.send_json({"type": "done"})
+            return
+
+        fh = open(log_path, "r")
+        try:
+            # Send initial content (last 200 lines)
+            content = fh.read()
+            all_lines = content.split("\n")
+            initial_lines = all_lines[-200:] if len(all_lines) > 200 else all_lines
+            await ws.send_json({"type": "initial", "lines": initial_lines})
+
+            # Now tail for new content
+            while True:
+                new_data = fh.read()
+                if new_data:
+                    new_lines = new_data.split("\n")
+                    # Filter out empty trailing line from split
+                    if new_lines and new_lines[-1] == "":
+                        new_lines = new_lines[:-1]
+                    if new_lines:
+                        await ws.send_json({"type": "append", "lines": new_lines})
+
+                alive_check_counter += 1
+                # Check agent alive status every ~3s (10 * 300ms)
+                if alive_check_counter >= 10:
+                    alive_check_counter = 0
+                    store = _store()
+                    agent = store.get_agent(agent_id)
+                    if agent and agent.status not in ("alive", "zombie"):
+                        # Read any remaining data
+                        remaining = fh.read()
+                        if remaining:
+                            final_lines = [line for line in remaining.split("\n") if line]
+                            if final_lines:
+                                await ws.send_json({"type": "append", "lines": final_lines})
+                        await ws.send_json({"type": "done"})
+                        return
+
+                await asyncio.sleep(0.3)
+        finally:
+            fh.close()
     except WebSocketDisconnect:
         pass
     except Exception:

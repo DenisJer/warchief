@@ -134,7 +134,7 @@ def build_claude_command(
     worktree_path: Path | None,
     project_root: Path,
     config: Config,
-) -> list[str]:
+) -> tuple[list[str], str, str]:
     """Build the Claude Code CLI command from role TOML permissions."""
     allowed_tools = registry.get_allowed_tools(role_name)
     # Merge task-level extra tools (e.g. MCP tools granted per-task)
@@ -341,6 +341,21 @@ def build_claude_command(
             "If tests FAIL (bugs in developer's code):\n"
             f"  warchief agent-update --task-id {task.id} --status open --add-label rejected\n"
             f"  warchief agent-update --task-id {task.id} --comment '<specific failures and where the bugs are>'\n"
+        )
+    elif role_name == "challenger":
+        task_prompt += (
+            "\n## CRITICAL: Before you exit, you MUST do these two things:\n"
+            "### Step 1: Write handoff notes\n"
+            "```bash\n"
+            f"warchief agent-update --task-id {task.id} --handoff 'CHALLENGE: <APPROVED/REJECTED>. "
+            "Issues found: <list>. Verdict: <summary>'\n"
+            "```\n"
+            "### Step 2: Signal your decision\n"
+            "If APPROVED (code is solid):\n"
+            f"  warchief agent-update --task-id {task.id} --status open\n"
+            "If REJECTED (issues found):\n"
+            f"  warchief agent-update --task-id {task.id} --status open --add-label rejected\n"
+            f"  warchief agent-update --task-id {task.id} --comment '<specific issues with file:line references>'\n"
         )
     elif role_name == "security_reviewer":
         task_prompt += (

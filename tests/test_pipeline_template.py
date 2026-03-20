@@ -54,7 +54,8 @@ class TestPipelineTemplate:
 
     def test_next_stage(self, default_pipeline: PipelineTemplate):
         assert default_pipeline.next_stage("planning", []) == "development"
-        assert default_pipeline.next_stage("development", []) == "testing"
+        assert default_pipeline.next_stage("development", []) == "challenge"
+        assert default_pipeline.next_stage("challenge", []) == "testing"
         assert default_pipeline.next_stage("testing", []) == "reviewing"
         assert default_pipeline.next_stage("reviewing", []) == "pr-creation"
         assert default_pipeline.next_stage("pr-creation", []) is None

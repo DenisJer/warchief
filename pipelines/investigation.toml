@@ -10,10 +10,9 @@ planning = { role = "conductor", priority = 3 }
 development = { role = "developer", priority = 2 }
 
 [pipelines]
-investigation = ["investigation"]
+investigation = ["investigation", "challenge"]
 
 [routing]
-deep-dive = { insert_stage = "challenge", after = "investigation" }
 skip-dev = { remove_stage = "development" }
 
 [defaults]

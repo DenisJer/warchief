@@ -72,7 +72,7 @@ class TestFullPipelineE2E:
             )
         )
 
-        # 4. Developer finishes — transition to testing (testing before reviewing)
+        # 4. Developer finishes — transition to challenge (challenger stress-tests code)
         result = dispatch_transition(
             task_status="closed",
             task_stage="development",
@@ -80,8 +80,26 @@ class TestFullPipelineE2E:
             agent_role="developer",
             branch_has_commits=True,
         )
-        assert result.next_stage == "testing"
+        assert result.next_stage == "challenge"
         assert result.status == "open"
+
+        store.update_task(
+            task_id,
+            stage="challenge",
+            status="open",
+            assigned_agent=None,
+            labels=["stage:challenge"],
+        )
+        store.update_agent("developer-thrall", status="retired", current_task=None)
+
+        # 4b. Challenger approves — transition to testing
+        result = dispatch_transition(
+            task_status="open",
+            task_stage="challenge",
+            task_labels=["stage:challenge"],
+            agent_role="challenger",
+        )
+        assert result.next_stage == "testing"
 
         store.update_task(
             task_id,
@@ -90,7 +108,6 @@ class TestFullPipelineE2E:
             assigned_agent=None,
             labels=["stage:testing"],
         )
-        store.update_agent("developer-thrall", status="retired", current_task=None)
 
         # 5. Tester passes — transition to reviewing
         result = dispatch_transition(
